@@ -19,4 +19,13 @@ dev = [
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.2",
+    "testcontainers>=4.15.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["apps/algorithm-service/tests", "packages/algorithms"]
+addopts = "-m 'not integration'"
+markers = ["integration: isolated PostgreSQL tests requiring Docker"]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]

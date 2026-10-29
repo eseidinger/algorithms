@@ -170,7 +170,11 @@ From the repository root:
 ```bash
 npm --prefix apps/web run build
 npm --prefix apps/web run lint
+npm --prefix apps/web run format:check
+npm --prefix apps/web test
 ```
+
+Vitest and React Testing Library run the application-shell test in jsdom. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
 
 The build runs TypeScript checking followed by Vite and writes static assets to `apps/web/dist/`. To inspect that build locally:
 
@@ -184,29 +188,47 @@ The preview server is for local verification. Deployment will serve the static b
 
 ```bash
 uv run ruff check packages/algorithms apps/algorithm-service
-uv run mypy packages/algorithms/src apps/algorithm-service/src
+uv run mypy packages/algorithms/src apps/algorithm-service/src apps/algorithm-service/tests
+uv run --all-packages pytest
 uv build --package algorithm-lab
 uv build --package algorithm-service
 ```
 
 `uv build` produces Python distributions in the repository's `dist/` directory. Building the service does not bundle its dependencies; its workspace dependency must also be supplied when installing outside uv's workspace.
 
-pytest and Hypothesis are installed for future algorithm and service tests. There are currently no Python tests; `uv run pytest` therefore reports no tests and exits with code 5.
+pytest runs the service configuration tests by default. They verify required credentials, environment-variable overrides, password redaction, and URL handling, including generated passwords through Hypothesis. mypy uses the Pydantic plugin to understand settings loaded from the environment.
+
+Run the PostgreSQL integration test separately with Docker available:
+
+```bash
+uv run --all-packages pytest -m integration
+```
+
+Testcontainers creates a disposable PostgreSQL instance on a dynamically assigned port. The test applies Alembic, verifies allowed statuses and invalid status/attempt rejection, checks repeated upgrades, and exercises downgrade and recreation. It does not connect to the Compose database. To run both unit and integration tests together:
+
+```bash
+uv run --all-packages pytest -m ""
+```
+
+The algorithm package has no computational implementation yet; add reference and property tests alongside its first algorithms.
 
 ### Spring
 
 ```bash
 cd apps/data-service
 ./gradlew bootJar
-PGPASSWORD=catalog_local ./gradlew test
+./gradlew ktlintCheck
+./gradlew test
 ```
 
-The executable JAR is written to `apps/data-service/build/libs/`. The current `@SpringBootTest` loads the real application context, uses local PostgreSQL, and runs Flyway. Start the database before testing. This test is not an isolated database fixture.
+The executable JAR is written to `apps/data-service/build/libs/`. ktlint checks Kotlin source and Gradle scripts and is included in Gradle's `check` task. Use `./gradlew ktlintFormat` to format them.
 
-To force the test to execute again after recreating the database:
+The Spring tests use Testcontainers and `@ServiceConnection` to start an isolated PostgreSQL database, initialize the catalog schema, and override application connection details. They check the seeded Fibonacci entry, Flyway validation, and repeated migration without duplicate entries. Docker is required; the Compose database and `PGPASSWORD` are not needed and are not used by these tests.
+
+To force a fresh test run instead of accepting Gradle task up-to-date results:
 
 ```bash
-PGPASSWORD=catalog_local ./gradlew test --rerun-tasks
+./gradlew test --rerun-tasks
 ```
 
 The first build downloads the wrapper distribution and dependencies. `--offline` works only after all required dependencies have been cached.
@@ -227,7 +249,7 @@ Create the next migration in:
 apps/data-service/src/main/resources/db/migration/V2__describe_the_change.sql
 ```
 
-Use schema-qualified table names such as `catalog.scenario_version`. Start Spring, or run its context test, to apply the migration. Flyway validates the checksums of previously applied migrations. Do not edit an applied migration or repair its checksum merely to hide an unexpected mismatch.
+Use schema-qualified table names such as `catalog.scenario_version`. Start Spring to apply the migration to the development database. The isolated Spring tests verify migrations against their own temporary database. Flyway validates the checksums of previously applied migrations. Do not edit an applied migration or repair its checksum merely to hide an unexpected mismatch.
 
 ### Alembic
 
@@ -307,11 +329,16 @@ PGPASSWORD=execution_local uv run alembic upgrade head
 cd ../..
 ```
 
-Reapply Flyway by starting Spring, or run:
+Reapply Flyway by starting Spring (the isolated test suite does not migrate the development database):
 
 ```bash
 cd apps/data-service
-PGPASSWORD=catalog_local ./gradlew test --rerun-tasks
+PGPASSWORD=catalog_local ./gradlew bootRun
+```
+
+After startup has completed, stop Spring with Ctrl+C and return to the root:
+
+```bash
 cd ../..
 ```
 
@@ -327,7 +354,8 @@ The showcase catalog should again contain `K01`, and the execution table should 
 | Python tries to import `asyncpg` | The configured driver must be `postgresql+psycopg`, matching the installed dependency and synchronous engine. |
 | Schema or table does not exist | Verify initialization completed, then apply Flyway or Alembic. |
 | Flyway checksum mismatch | Restore the applied migration and add a new one, or intentionally reset disposable local data. |
-| Spring tests appear not to initialize a reset database | Force execution with `--rerun-tasks`; Gradle can otherwise reuse previous task results. |
+| Spring tests do not initialize a reset development database | Tests intentionally use a disposable database. Start Spring with `bootRun` to migrate the Compose database. |
+| Testcontainers cannot connect to Docker | Ensure the Docker daemon is running and accessible. Integration tests do not silently skip when Docker is unavailable. |
 | Gradle cannot find Java 25 | Set `JAVA_HOME` to a JDK 25 installation and check `./gradlew --version`. |
 | Docker socket permission denied | Ensure your user can access the configured Docker daemon. |
 

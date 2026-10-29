@@ -7,18 +7,18 @@ import { BrowserRouter } from 'react-router'
 const queryClient = new QueryClient()
 
 const theme = createTheme({
-    typography: {
-        fontFamily: 'Roboto, sans-serif',
-    },
+  typography: {
+    fontFamily: 'Roboto, sans-serif',
+  },
 })
 
 export function AppProviders({ children }: { children: ReactNode }) {
-    return (
-        <QueryClientProvider client={queryClient}>
-            <ThemeProvider theme={theme}>
-                <CssBaseline />
-                <BrowserRouter>{children}</BrowserRouter>
-            </ThemeProvider>
-        </QueryClientProvider>
-    )
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <BrowserRouter>{children}</BrowserRouter>
+      </ThemeProvider>
+    </QueryClientProvider>
+  )
 }

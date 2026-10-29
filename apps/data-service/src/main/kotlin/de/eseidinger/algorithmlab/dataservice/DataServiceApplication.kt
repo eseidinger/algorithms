@@ -7,5 +7,5 @@ import org.springframework.boot.runApplication
 class DataServiceApplication
 
 fun main(args: Array<String>) {
-	runApplication<DataServiceApplication>(*args)
+    runApplication<DataServiceApplication>(*args)
 }
