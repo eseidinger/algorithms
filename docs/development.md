@@ -4,7 +4,7 @@
 
 The repository contains a React/TypeScript frontend, a Kotlin/Spring Boot data service, a Python service package, and an independent Python algorithm package. PostgreSQL runs in Docker; applications run directly on the host during development.
 
-The frontend currently renders the application shell. Spring initializes the showcase catalog and exposes Actuator health endpoints. Python has database configuration and Alembic migrations; its generated CLI still prints a greeting. A FastAPI application, execution API, worker loop, and complete Fibonacci workflow are not implemented yet.
+The frontend currently renders the application shell. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration and Alembic migrations; its generated CLI still prints a greeting. A FastAPI application, execution API, worker loop, and complete Fibonacci workflow are not implemented yet.
 
 ## Prerequisites
 
@@ -124,7 +124,18 @@ curl -f http://localhost:8080/actuator/health
 curl -f http://localhost:8080/actuator/health/readiness
 ```
 
-Both should report `UP`. Stop the application with Ctrl+C.
+Both should report `UP`.
+
+Read the catalog and the seeded Fibonacci scenario version:
+
+```bash
+curl -f http://localhost:8080/api/data/showcases
+curl -f http://localhost:8080/api/data/scenario-versions/00000000-0000-4000-8000-000000000010
+```
+
+The scenario response contains `id`, `scenarioId`, `showcaseId`, `version`, `name`, and a structured `input` object (`{"n": 10}`). A well-formed unknown UUID returns HTTP 404; a malformed UUID returns HTTP 400. The routes provide read access only.
+
+Stop the application with Ctrl+C.
 
 ### Web frontend
 
@@ -223,7 +234,7 @@ cd apps/data-service
 
 The executable JAR is written to `apps/data-service/build/libs/`. ktlint checks Kotlin source and Gradle scripts and is included in Gradle's `check` task. Use `./gradlew ktlintFormat` to format them.
 
-The Spring tests use Testcontainers and `@ServiceConnection` to start an isolated PostgreSQL database, initialize the catalog schema, and override application connection details. They check the seeded Fibonacci entry, Flyway validation, and repeated migration without duplicate entries. Docker is required; the Compose database and `PGPASSWORD` are not needed and are not used by these tests.
+The Spring tests use Testcontainers and `@ServiceConnection` to start an isolated PostgreSQL database, initialize the catalog schema, and override application connection details. They check seeded data, scenario immutability, Flyway validation, repeated migration without duplicate entries, and HTTP responses for catalog access, known and unknown scenario versions, and malformed IDs. Docker is required; the Compose database and `PGPASSWORD` are not needed and are not used by these tests.
 
 To force a fresh test run instead of accepting Gradle task up-to-date results:
 
