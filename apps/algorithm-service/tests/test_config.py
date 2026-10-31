@@ -8,7 +8,15 @@ from sqlalchemy.engine import make_url
 
 @pytest.fixture(autouse=True)
 def isolated_database_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSSLMODE"):
+    for name in (
+        "PGHOST",
+        "PGPORT",
+        "PGDATABASE",
+        "PGUSER",
+        "PGPASSWORD",
+        "PGSSLMODE",
+        "DATA_SERVICE_URL",
+    ):
         monkeypatch.delenv(name, raising=False)
         monkeypatch.delenv(name.lower(), raising=False)
 
@@ -16,6 +24,21 @@ def isolated_database_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_database_password_is_required() -> None:
     with pytest.raises(ValidationError, match="pgpassword"):
         Settings()
+
+
+def test_data_service_url_defaults_to_local_spring() -> None:
+    assert (
+        Settings(pgpassword=SecretStr("test")).data_service_url
+        == "http://localhost:8080"
+    )
+
+
+def test_data_service_url_can_be_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_SERVICE_URL", "http://data-service:8080")
+    assert (
+        Settings(pgpassword=SecretStr("test")).data_service_url
+        == "http://data-service:8080"
+    )
 
 
 def test_platform_environment_overrides_local_defaults(

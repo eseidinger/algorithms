@@ -4,7 +4,7 @@
 
 The repository contains a React/TypeScript frontend, a Kotlin/Spring Boot data service, a Python service package, and an independent Python algorithm package. PostgreSQL runs in Docker; applications run directly on the host during development.
 
-The frontend currently renders the application shell. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration and Alembic migrations; its generated CLI still prints a greeting. A FastAPI application, execution API, worker loop, and complete Fibonacci workflow are not implemented yet.
+The frontend currently renders the application shell. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. The worker loop and complete Fibonacci workflow are not implemented yet.
 
 ## Prerequisites
 
@@ -85,7 +85,8 @@ If host port 5432 is occupied, change the Compose mapping to `127.0.0.1:5433:543
 | `PGUSER` | `catalog_app` | `execution_app` |
 | `PGPASSWORD` | Required | Required |
 | `PGSSLMODE` | Not currently mapped in the JDBC URL | `prefer` |
-| `PORT` | `8080` | No HTTP server implemented yet |
+| `PORT` | `8080` | Not read by the Python application; pass Uvicorn `--port` (locally `8000`) |
+| `DATA_SERVICE_URL` | Not used | `http://localhost:8080` |
 
 Spring sets `currentSchema=catalog` in its JDBC URL. Python uses the synchronous `postgresql+psycopg` SQLAlchemy driver and explicitly sets `search_path=executions` when connecting.
 
@@ -148,6 +149,35 @@ npm run dev
 
 Open the URL printed by Vite, normally `http://localhost:5173`. API proxying and backend calls are not configured yet.
 
+### Python execution API
+
+After applying Alembic, start the API in a separate terminal from the repository root:
+
+```bash
+PGPASSWORD=execution_local \
+DATA_SERVICE_URL=http://localhost:8080 \
+uv run --package algorithm-service \
+uvicorn algorithm_service.main:app --reload --port 8000
+```
+
+Open `http://localhost:8000/docs` for Swagger UI or `/openapi.json` for the API schema. The application creates an engine and one HTTPX client at startup and closes both at shutdown, including cleanup after partial initialization failure. Startup does not run migrations or verify database connectivity; the first database operation opens a connection.
+
+```bash
+curl -i http://localhost:8000/api/algorithms/executions/00000000-0000-4000-8000-000000000099
+```
+
+An unknown execution UUID returns HTTP 404 with `{"detail":"Execution not found"}`. A malformed UUID returns HTTP 422. Existing jobs return a camelCase response containing `input`, result and timestamps; internal lease, attempt, and error fields are omitted. GET does not contact Spring. Create an execution while Spring is running on `DATA_SERVICE_URL`:
+
+```bash
+curl -i -X POST http://localhost:8000/api/algorithms/executions \
+  -H 'Content-Type: application/json' \
+  -d '{"scenarioVersionId":"00000000-0000-4000-8000-000000000010"}'
+```
+
+POST returns HTTP 201 only after the job is committed. Its relative `Location` header points to the GET endpoint, and its body uses the same public execution representation. Follow that location on port 8000; the job remains available after restarting the API. New jobs remain `queued` until a worker is implemented. Each successful POST creates a distinct job.
+
+The request accepts only a scenario-version reference; inputs are loaded from Spring. Unknown scenarios return 404, invalid requests or unsupported scenario inputs return 422, upstream connection/server failures return 503, and malformed upstream responses return 502. Unexpected internal failures return 500 without exposing exception details.
+
 ### Python connectivity check
 
 From the repository root:
@@ -207,15 +237,21 @@ uv build --package algorithm-service
 
 `uv build` produces Python distributions in the repository's `dist/` directory. Building the service does not bundle its dependencies; its workspace dependency must also be supplied when installing outside uv's workspace.
 
-pytest runs the service configuration tests by default. They verify required credentials, environment-variable overrides, password redaction, and URL handling, including generated passwords through Hypothesis. mypy uses the Pydantic plugin to understand settings loaded from the environment.
+pytest runs the service configuration, schema-validation, HTTP-client, and algorithm tests by default. They verify required credentials, environment-variable overrides, password redaction, and URL handling, including generated passwords through Hypothesis. mypy uses the Pydantic plugin to understand settings loaded from the environment.
 
-Run the PostgreSQL integration test separately with Docker available:
+The synchronous `DataClient` loads scenario versions from Spring using an injected `httpx.Client`. Its tests use `MockTransport`, so Spring does not need to be running. They cover successful reads, HTTP failures, network errors and timeouts, malformed response data, and mismatched scenario IDs. The caller owns the HTTP client's lifecycle; FastAPI now supplies its base URL, a five-second timeout, disabled redirects, and shutdown cleanup.
+
+`ExecutionRepository` persists queued jobs with their scenario reference, algorithm version, and JSONB input snapshot. It commits before returning and can read jobs by UUID, returning `None` for an unknown ID. The internal `Execution` model includes status, attempt, timestamps, and optional result fields. This repository does not call Spring or execute algorithms.
+
+`ExecutionService` combines the Spring client and repository: it accepts only showcase `K01`, validates Fibonacci input as a strict integer from 0 through 78, and persists the validated snapshot with algorithm ID `fibonacci.iterative` and implementation version `1`. Invalid scenarios and upstream failures do not create jobs. Existing executions are read without contacting Spring; unknown IDs raise `ExecutionNotFound`. Service tests isolate HTTP and persistence dependencies and verify these behaviors. FastAPI POST/GET routes and application lifecycle are implemented; worker integration is still pending.
+
+Run the PostgreSQL integration tests separately with Docker available:
 
 ```bash
 uv run --all-packages pytest -m integration
 ```
 
-Testcontainers creates a disposable PostgreSQL instance on a dynamically assigned port. The test applies Alembic, verifies allowed statuses and invalid status/attempt rejection, checks repeated upgrades, and exercises downgrade and recreation. It does not connect to the Compose database. To run both unit and integration tests together:
+Testcontainers creates a disposable PostgreSQL instance on a dynamically assigned port. The migration test applies Alembic, verifies allowed statuses and invalid status/attempt rejection, checks repeated upgrades, and exercises downgrade and recreation. Repository tests verify committed jobs through a separate engine, JSONB snapshots and defaults, unknown IDs, and recovery after a failed insert. API integration tests combine real service and repository code with temporary PostgreSQL and simulated Spring HTTP responses. They verify POST/GET persistence across fresh API instances and ensure failed scenario resolution or validation does not persist jobs. These tests do not connect to the Compose database or a running Spring instance. To run both unit and integration tests together:
 
 ```bash
 uv run --all-packages pytest -m ""

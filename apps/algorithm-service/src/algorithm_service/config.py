@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     pguser: str = "execution_app"
     pgpassword: SecretStr
     pgsslmode: str = "prefer"
+    data_service_url: str = "http://localhost:8080"
 
     @property
     def database_url(self) -> URL:
