@@ -73,3 +73,47 @@ class ExecutionRepository:
                 return None
 
             return Execution.model_validate(dict(row))
+
+    def reserve_execution(self, *, lease_seconds: int = 30) -> Execution | None:
+        if lease_seconds <= 0:
+            raise ValueError("Lease duration must be positive")
+
+        statement = text(
+            """
+            WITH candidate AS (
+                SELECT id
+                FROM executions.execution
+                WHERE status = 'queued'
+                   OR (
+                       status = 'running'
+                       AND lease_until <= CURRENT_TIMESTAMP
+                   )
+                ORDER BY created_at, id
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE executions.execution AS execution
+            SET status = 'running',
+                attempt = execution.attempt + 1,
+                lease_until = CURRENT_TIMESTAMP
+                    + (:lease_seconds * INTERVAL '1 second'),
+                started_at = CURRENT_TIMESTAMP,
+                finished_at = NULL,
+                result = NULL,
+                error = NULL,
+                duration_ms = NULL
+            FROM candidate
+            WHERE execution.id = candidate.id
+            RETURNING execution.*
+            """
+        )
+
+        with self._engine.begin() as connection:
+            row = (
+                connection.execute(statement, {"lease_seconds": lease_seconds})
+                .mappings()
+                .one_or_none()
+            )
+            execution = Execution.model_validate(dict(row)) if row is not None else None
+
+        return execution
