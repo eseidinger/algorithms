@@ -117,3 +117,88 @@ class ExecutionRepository:
             execution = Execution.model_validate(dict(row)) if row is not None else None
 
         return execution
+
+    def complete_execution(
+        self,
+        execution_id: UUID,
+        *,
+        attempt: int,
+        result: dict[str, JsonValue],
+        duration_ms: float,
+    ) -> bool:
+        statement = text(
+            """
+            UPDATE executions.execution
+            SET status = 'succeeded',
+                result = :result,
+                error = NULL,
+                duration_ms = :duration_ms,
+                finished_at = clock_timestamp(),
+                lease_until = NULL
+            WHERE id = :id
+              AND attempt = :attempt
+              AND status = 'running'
+              AND lease_until > clock_timestamp()
+            RETURNING id
+            """
+        ).bindparams(bindparam("result", type_=JSONB))
+
+        with self._engine.begin() as connection:
+            # Acquire the lock before checking time, including after a lock wait.
+            connection.execute(
+                text("SELECT id FROM executions.execution WHERE id = :id FOR UPDATE"),
+                {"id": execution_id},
+            ).all()
+            updated_id = connection.execute(
+                statement,
+                {
+                    "id": execution_id,
+                    "attempt": attempt,
+                    "result": result,
+                    "duration_ms": duration_ms,
+                },
+            ).scalar_one_or_none()
+
+        return updated_id is not None
+
+    def fail_execution(
+        self,
+        execution_id: UUID,
+        *,
+        attempt: int,
+        error: str,
+        duration_ms: float,
+    ) -> bool:
+        statement = text(
+            """
+            UPDATE executions.execution
+            SET status = 'failed',
+                result = NULL,
+                error = :error,
+                duration_ms = :duration_ms,
+                finished_at = clock_timestamp(),
+                lease_until = NULL
+            WHERE id = :id
+              AND attempt = :attempt
+              AND status = 'running'
+              AND lease_until > clock_timestamp()
+            RETURNING id
+            """
+        )
+
+        with self._engine.begin() as connection:
+            connection.execute(
+                text("SELECT id FROM executions.execution WHERE id = :id FOR UPDATE"),
+                {"id": execution_id},
+            ).all()
+            updated_id = connection.execute(
+                statement,
+                {
+                    "id": execution_id,
+                    "attempt": attempt,
+                    "error": error,
+                    "duration_ms": duration_ms,
+                },
+            ).scalar_one_or_none()
+
+        return updated_id is not None

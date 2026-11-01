@@ -83,13 +83,17 @@ stateDiagram-v2
     [*] --> queued: API creation
     queued --> running: reserve; increment attempt
     running --> running: expired lease; reserve a new attempt
-    running --> succeeded: planned guarded completion
-    running --> failed: planned guarded failure
+    running --> succeeded: guarded completion
+    running --> failed: guarded failure
 ```
 
-`succeeded`, `failed`, and `cancelled` are already permitted by the schema, but completion/failure methods, a cancellation workflow, lease renewal, and a worker loop are not implemented. Reservation is currently callable code rather than an active background process.
+`complete_execution()` and `fail_execution()` implement guarded terminal updates. Each first locks the row with `SELECT ... FOR UPDATE` in a short transaction. A subsequent update checks ID, attempt, `running` state, and `lease_until > clock_timestamp()`. The current database time is checked after the row lock has been acquired, so an intervening wait cannot preserve an obsolete transaction-start timestamp as proof of a valid lease.
 
-The future worker must compute outside the reservation transaction and condition completion on the execution ID, current attempt, running state, and valid lease. A lease expiry cannot physically stop an old process from computing. Attempt checks will prevent an obsolete attempt from overwriting a newer result; they are not an exactly-once computation guarantee.
+An accepted update records duration and `finished_at`, clears the lease, and sets `succeeded` with a result or `failed` with an error. Existing attempt/start metadata is retained. The method returns `True` only after commit; unknown, expired, terminal, or mismatched jobs return `False` without mutation. Competing completion calls cannot both succeed.
+
+`cancelled` is permitted by the schema, but a cancellation workflow, lease renewal, and worker loop are not implemented. Repository operations remain callable code rather than an active background process.
+
+The future worker must compute outside the reservation transaction and condition completion on the execution ID, current attempt, running state, and valid lease. A lease expiry cannot physically stop an old process from computing. The implemented guarded updates prevent an obsolete attempt from overwriting a newer result; they are not an exactly-once computation guarantee.
 
 ## Migration Boundaries
 

@@ -49,7 +49,7 @@ Source: [algorithm_service](../../apps/algorithm-service/src/algorithm_service).
 | `data_client.py` | Synchronous HTTPX calls to Spring and upstream response validation |
 | `executions.py` | Resolve and validate scenarios, choose the algorithm/version, and coordinate persistence |
 | `models.py` | Internal typed execution record and allowed statuses |
-| `repository.py` | SQLAlchemy SQL for creation, lookup, and job reservation |
+| `repository.py` | SQLAlchemy SQL for creation, lookup, job reservation, and guarded completion/failure |
 | `config.py` | Environment-based settings and the psycopg database URL |
 
 FastAPI routes are synchronous because the HTTPX and SQLAlchemy operations are synchronous. The asynchronous lifespan manages startup and shutdown; it does not make database operations asynchronous.
@@ -88,7 +88,7 @@ The frontend currently has neither proxy routing nor cross-origin backend calls.
 | Algorithm | pytest and Hypothesis: known Fibonacci values, negative input, recurrence |
 | Python validation and orchestration | pytest: configuration, schemas, scenario lookup errors, input rejection, and service coordination |
 | Python HTTP | FastAPI TestClient: response shape, status codes, Location, request validation, and lifecycle cleanup |
-| PostgreSQL | Testcontainers: migrations, JSONB persistence, rollback, API recreation, expired leases, row locks, and concurrent reservations |
+| PostgreSQL | Testcontainers: migrations, JSONB persistence, rollback, API recreation, expired leases, row locks, concurrent reservations, guarded completion, and lease checks after row-lock waits |
 | Spring | JUnit, MockMvc, Testcontainers: migrations, immutable scenarios, catalog/scenario responses and error cases |
 | Frontend | Vitest, React Testing Library, jsdom: accessible application shell |
 | Static checks | Ruff and mypy; ktlint; ESLint and TypeScript; Prettier for the frontend |

@@ -2,7 +2,7 @@
 
 [Architecture overview](../architecture.md) · [Data and executions](data-and-executions.md) · [HTTP scenarios](request-scenarios.md)
 
-Status: November 1, 2026. **Reservation and lease recovery are implemented repository behavior.** The background worker loop, algorithm dispatch, completion/failure updates, heartbeat renewal, and cancellation workflow are not implemented. Diagrams W1–W3 therefore use repository callers; they do not claim that running workers exist. W4–W5 describe planned worker behavior.
+Status: November 1, 2026. **Reservation, lease recovery, and guarded completion/failure are implemented repository behavior.** The background worker loop, algorithm dispatch, heartbeat renewal, and cancellation workflow are not implemented. Diagrams W1–W3 and W5–W6 use repository callers; they do not claim that running workers exist. W4 describes planned worker orchestration around the implemented persistence methods.
 
 ## W1. Competing Callers Reserve Different Jobs
 
@@ -83,13 +83,13 @@ sequenceDiagram
 
 **Outcome:** E1 becomes available again without an administrator manually requeuing it. `started_at` identifies the current attempt, not necessarily the first attempt. Input snapshot, algorithm identity, and scenario reference remain unchanged.
 
-Reservation does not terminate the old caller. If it resumes, both processes could compute. Safe completion must therefore be guarded separately; that protection is still planned.
+Reservation does not terminate the old caller. If it resumes, both processes could compute. Completion is guarded separately by ID, attempt, running state, and current lease validity; that persistence protection is implemented.
 
 **Evidence:** [Lease expiry and retry-state test](../../apps/algorithm-service/tests/test_reservations.py) moves the deadline into the past explicitly, avoiding sleeps and wall-clock races.
 
 ## W4. Compute and Persist a Successful Result
 
-**Planned; not executable with the current worker implementation, because no worker exists yet.** Prerequisites: guarded completion methods and a worker entrypoint have been added.
+**Planned; not executable with the current worker implementation, because no worker exists yet.** Prerequisite: a worker entrypoint and algorithm dispatch are added; the guarded completion methods already exist.
 
 **Trigger:** The worker receives a reservation for `fibonacci.iterative`, implementation version `1`, with input n = 10.
 
@@ -119,18 +119,18 @@ sequenceDiagram
 
 The worker should use the stored input snapshot and should not fetch it again from Spring. Lease renewal/checkpoints and behavior for computation longer than the lease still need implementation decisions. No result transition is implied merely by having reserved the job.
 
-**Evidence:** There is no worker or completion test yet. The independent [Fibonacci tests](../../packages/algorithms/tests/test_fibonacci.py) and [reservation tests](../../apps/algorithm-service/tests/test_reservations.py) cover only the existing building blocks.
+**Evidence:** There is no worker orchestration test yet. The independent [Fibonacci tests](../../packages/algorithms/tests/test_fibonacci.py), [reservation tests](../../apps/algorithm-service/tests/test_reservations.py), and [completion tests](../../apps/algorithm-service/tests/test_completion.py) cover the existing building blocks separately.
 
 ## W5. Reject a Late Result from an Obsolete Attempt
 
-**Planned.** Prerequisites: W3 has reassigned E1 to attempt 2 and guarded completion has been implemented.
+**Implemented repository behavior.** Prerequisite: W3 has reassigned E1 to attempt 2. The callers below invoke completion methods directly; worker integration is still planned.
 
 **Trigger:** The old worker resumes and tries to publish the result of attempt 1.
 
 ```mermaid
 sequenceDiagram
-    participant A as Future worker A
-    participant B as Future worker B
+    participant A as Old attempt caller
+    participant B as New attempt caller
     participant D as PostgreSQL executions
     Note over A,D: A held attempt 1; its lease expired
     B->>D: Reserve E1 as attempt 2 and commit
@@ -144,7 +144,34 @@ sequenceDiagram
 
 **Expected outcome:** The old result cannot overwrite the new attempt. A completion whose lease has expired should also be rejected even if no replacement has reserved the job yet. Unknown, terminal, or otherwise mismatched jobs must not be updated.
 
-This is an intended persistence contract, not current functionality. It provides protection against stale writes, not exactly-once computation. Repeating an algorithm with external side effects would require additional idempotency design; the current pure Fibonacci function has no such effects.
+The completion tests verify these guards, including rejection of both success and failure updates from obsolete attempts. It provides protection against stale writes, not exactly-once computation. Repeating an algorithm with external side effects would require additional idempotency design; the current pure Fibonacci function has no such effects.
+
+## W6. Lease Expires While Completion Waits for a Row Lock
+
+**Implemented repository behavior.** Prerequisites: a running attempt has a valid lease, and another database transaction holds its row lock.
+
+**Trigger:** A caller starts completion but must wait for that lock.
+
+```mermaid
+sequenceDiagram
+    participant H as Lock-holding transaction
+    participant C as Completion caller
+    participant D as PostgreSQL executions
+    H->>D: Lock execution row
+    C->>D: BEGIN and SELECT FOR UPDATE
+    Note over C,D: Wait for row lock
+    H->>D: Lease deadline passes or is set to current time
+    H->>D: COMMIT and release lock
+    D-->>C: Acquire row lock
+    C->>D: Guarded UPDATE using clock_timestamp()
+    D-->>C: Zero updated rows because lease has expired
+    C->>D: COMMIT
+    Note over C: Return False without changing result or status
+```
+
+**Outcome:** A lease that was valid when the completion transaction began is not automatically valid when the lock becomes available. Both completion methods acquire the lock before evaluating the time-sensitive update and use actual database wall-clock time rather than the fixed transaction-start timestamp.
+
+**Evidence:** [Completion lock-wait tests](../../apps/algorithm-service/tests/test_completion.py) observe the blocked connection in `pg_stat_activity`, expire its lease while the lock is held, then verify rejection for success and failure. No timing sleep is used to simulate expiry; the observer polls with a bounded timeout.
 
 ## Planned Browser Acceptance Scenario
 

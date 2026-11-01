@@ -5,8 +5,10 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from algorithm_service.config import Settings
+from algorithm_service.database import create_database_engine
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 
 @pytest.fixture
@@ -36,3 +38,12 @@ def database_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
         config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
         command.upgrade(config, "head")
         yield settings
+
+
+@pytest.fixture
+def engine(database_settings: Settings) -> Iterator[Engine]:
+    engine = create_database_engine(database_settings)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
