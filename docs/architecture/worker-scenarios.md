@@ -2,7 +2,7 @@
 
 [Architecture overview](../architecture.md) · [Data and executions](data-and-executions.md) · [HTTP scenarios](request-scenarios.md)
 
-Status: November 1, 2026. **Reservation, lease recovery, guarded completion/failure, and single-job worker processing are implemented.** The background worker loop, CLI, heartbeat renewal, and cancellation workflow are not implemented. Diagrams W1–W3 and W5–W6 show repository callers; W4 and W7 show explicitly invoked worker processing. None implies that a continuous worker process is already running.
+Status: November 1, 2026. **Reservation, lease recovery, guarded completion/failure, and single-job worker processing are implemented.** The worker loop and CLI are also implemented; heartbeat renewal and the cancellation workflow are not. Diagrams W1–W3 and W5–W6 show repository callers; W4 and W7 show explicitly invoked worker processing. W8 describes the implemented process lifecycle. A worker process runs only when its CLI is started; it is not launched automatically by Compose.
 
 ## W1. Competing Callers Reserve Different Jobs
 
@@ -51,7 +51,7 @@ sequenceDiagram
     Note over C: reserve_execution returns None
 ```
 
-**Outcome:** No row is changed and no exception is required. A future worker loop will wait before polling again; that loop is not implemented yet.
+**Outcome:** No row is changed and no exception is required. The worker loop waits for the configured polling interval, using an interruptible stop event, before trying again.
 
 Jobs in `succeeded`, `failed`, or `cancelled` are excluded. A running row with a null lease is also not an expired candidate. Nonpositive lease durations raise `ValueError` before a database transaction starts.
 
@@ -89,7 +89,7 @@ Reservation does not terminate the old caller. If it resumes, both processes cou
 
 ## W4. Compute and Persist a Successful Result
 
-**Implemented as one explicit call to `process_next_execution()`.** Prerequisites: an eligible job exists and a caller supplies an execution repository. A continuous loop and CLI are still planned.
+**Implemented as one explicit call to `process_next_execution()`.** Prerequisites: an eligible job exists and a caller supplies an execution repository. The continuous loop and CLI repeatedly invoke this function when started.
 
 **Trigger:** The worker receives a reservation for `fibonacci.iterative`, implementation version `1`, with input n = 10.
 
@@ -119,11 +119,11 @@ sequenceDiagram
 
 The worker should use the stored input snapshot and should not fetch it again from Spring. Timing includes validation and calculation and excludes database operations. The function returns `idle`, `succeeded`, `failed`, or `discarded`; these outcomes are not extra persisted statuses. Lease renewal and checkpoints remain unimplemented; a result whose lease expired is discarded. No result transition is implied merely by having reserved the job.
 
-**Evidence:** [Worker unit tests](../../apps/algorithm-service/tests/test_worker.py) cover dispatch, validation, error boundaries, and discarded completions. [Worker integration tests](../../apps/algorithm-service/tests/test_worker_integration.py) verify successful computation, stored failure, and lease-expiry discard followed by retry recovery against temporary PostgreSQL. No continuously running worker or browser journey is tested yet.
+**Evidence:** [Worker unit tests](../../apps/algorithm-service/tests/test_worker.py) cover dispatch, validation, error boundaries, and discarded completions. [Worker integration tests](../../apps/algorithm-service/tests/test_worker_integration.py) verify successful computation, stored failure, and lease-expiry discard followed by retry recovery against temporary PostgreSQL. [Worker process tests](../../apps/algorithm-service/tests/test_worker_process.py) cover the installed CLI against PostgreSQL and both shutdown signals. A browser journey is not tested yet.
 
 ## W5. Reject a Late Result from an Obsolete Attempt
 
-**Implemented repository behavior.** Prerequisite: W3 has reassigned E1 to attempt 2. The callers below invoke completion methods directly; continuous worker-loop integration is still planned.
+**Implemented repository behavior.** Prerequisite: W3 has reassigned E1 to attempt 2. The callers below invoke completion methods directly; the worker loop uses the same guarded completion methods.
 
 **Trigger:** The old worker resumes and tries to publish the result of attempt 1.
 
@@ -211,6 +211,48 @@ sequenceDiagram
 
 **Evidence:** [Worker unit tests](../../apps/algorithm-service/tests/test_worker.py) exercise empty queues, validation and calculation errors, both discarded outcomes, each persistence error boundary, and interruption.
 
+## W8. Poll, Retry, and Shut Down the Worker Process
+
+**Implemented.** Prerequisites: execution migrations are applied and `algorithm-worker` is started with valid database credentials and positive timing settings.
+
+```mermaid
+sequenceDiagram
+    actor O as Operator or process supervisor
+    participant C as Worker CLI
+    participant L as run_worker
+    participant R as Single-job processor and repository
+    O->>C: Start algorithm-worker
+    C->>C: Read settings, create engine, install signal handlers
+    C->>L: Enter loop with stop event
+    loop Until stop event is observed
+        L->>R: process_next_execution with configured lease
+        alt Job processed or result discarded
+            R-->>L: succeeded, failed or discarded
+            L->>L: Log outcome and continue
+        else No eligible job
+            R-->>L: idle
+            L->>L: Interruptible polling wait
+        else SQLAlchemy operation fails
+            R-->>L: SQLAlchemyError
+            L->>L: Log exception and interruptible error-retry wait
+        end
+        opt SIGINT or SIGTERM arrives during processing or waiting
+            O->>C: Stop signal
+            C->>L: Set stop event
+            Note over L,R: Wake waits or finish the current processing call
+        end
+    end
+    L-->>C: Loop exits without another iteration
+    C->>C: Restore previous signal handlers and dispose engine
+    C-->>O: Clean process exit
+```
+
+The signal may arrive during any operation in a loop iteration; the optional signal block illustrates its effect rather than restricting its timing. Shutdown is cooperative and does not forcibly interrupt an algorithm or blocked database call. The default idle delay is one second, the database-error delay is five seconds, and the lease is 30 seconds. Unexpected non-SQLAlchemy loop errors propagate after cleanup rather than entering an unconditional retry loop.
+
+Jobs created while the worker is stopped remain queued. On startup the CLI drains them; jobs submitted afterward are picked up by the same process. The worker uses stored snapshots and does not call Spring.
+
+**Evidence:** [Loop tests](../../apps/algorithm-service/tests/test_worker_loop.py) exercise stop-before-start, processing multiple outcomes, database-error recovery, interruptible idle/error waits, and stop-after-current-job. [CLI tests](../../apps/algorithm-service/tests/test_worker_cli.py) verify signal handling and cleanup on normal return, loop exceptions, and partial signal setup failure. [Process tests](../../apps/algorithm-service/tests/test_worker_process.py) execute the installed command against temporary PostgreSQL, process jobs submitted before and after startup, and exit cleanly on SIGINT/SIGTERM.
+
 ## Planned Browser Acceptance Scenario
 
-Once the continuous worker process and frontend are implemented, the acceptance journey is: select a scenario, POST an execution, poll its saved URL until `succeeded`, display 55, then reload the URL and obtain the same stored result. Also submit while the worker is stopped and verify that starting it later processes the durable job. These are acceptance scenarios from the [first slice plan](../Algorithm_Lab_First_Vertical_Slice_Plan.md), not currently available browser behavior.
+Once the frontend is connected to the implemented backends and worker, the acceptance journey is: select a scenario, POST an execution, poll its saved URL until `succeeded`, display 55, then reload the URL and obtain the same stored result. Also submit while the worker is stopped and verify that starting it later processes the durable job. These are acceptance scenarios from the [first slice plan](../Algorithm_Lab_First_Vertical_Slice_Plan.md), not currently available browser behavior.

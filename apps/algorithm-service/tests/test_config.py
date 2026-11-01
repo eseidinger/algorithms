@@ -16,6 +16,9 @@ def isolated_database_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "PGPASSWORD",
         "PGSSLMODE",
         "DATA_SERVICE_URL",
+        "WORKER_POLL_INTERVAL",
+        "WORKER_ERROR_RETRY_INTERVAL",
+        "WORKER_LEASE_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
         monkeypatch.delenv(name.lower(), raising=False)
@@ -74,3 +77,42 @@ def test_platform_environment_overrides_local_defaults(
 def test_database_url_preserves_password_characters(password: str) -> None:
     url = Settings(pgpassword=SecretStr(password)).database_url
     assert make_url(url.render_as_string(hide_password=False)).password == password
+
+
+def test_worker_defaults_and_environment_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(pgpassword=SecretStr("test"))
+    assert settings.worker_poll_interval == 1.0
+    assert settings.worker_error_retry_interval == 5.0
+    assert settings.worker_lease_seconds == 30
+    monkeypatch.setenv("WORKER_POLL_INTERVAL", "0.25")
+    monkeypatch.setenv("WORKER_ERROR_RETRY_INTERVAL", "2.5")
+    monkeypatch.setenv("WORKER_LEASE_SECONDS", "60")
+    configured = Settings(pgpassword=SecretStr("test"))
+    assert configured.worker_poll_interval == 0.25
+    assert configured.worker_error_retry_interval == 2.5
+    assert configured.worker_lease_seconds == 60
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("WORKER_POLL_INTERVAL", "0"),
+        ("WORKER_POLL_INTERVAL", "-1"),
+        ("WORKER_POLL_INTERVAL", "nan"),
+        ("WORKER_POLL_INTERVAL", "inf"),
+        ("WORKER_ERROR_RETRY_INTERVAL", "0"),
+        ("WORKER_ERROR_RETRY_INTERVAL", "-1"),
+        ("WORKER_ERROR_RETRY_INTERVAL", "nan"),
+        ("WORKER_ERROR_RETRY_INTERVAL", "inf"),
+        ("WORKER_LEASE_SECONDS", "0"),
+        ("WORKER_LEASE_SECONDS", "-1"),
+    ],
+)
+def test_worker_rejects_invalid_configuration(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValidationError):
+        Settings(pgpassword=SecretStr("test"))

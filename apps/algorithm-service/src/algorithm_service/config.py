@@ -1,4 +1,4 @@
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings
 from sqlalchemy import URL
 
@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     pgpassword: SecretStr
     pgsslmode: str = "prefer"
     data_service_url: str = "http://localhost:8080"
+    worker_poll_interval: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    worker_error_retry_interval: float = Field(default=5.0, gt=0, allow_inf_nan=False)
+    worker_lease_seconds: int = Field(default=30, gt=0)
 
     @property
     def database_url(self) -> URL:

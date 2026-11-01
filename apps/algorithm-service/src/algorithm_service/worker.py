@@ -1,13 +1,17 @@
+import logging
+from threading import Event
 from time import perf_counter
 from typing import Literal
 
 from algorithm_lab.fibonacci import fibonacci
+from sqlalchemy.exc import SQLAlchemyError
 
 from algorithm_service.executions import ALGORITHM_ID, IMPLEMENTATION_VERSION
 from algorithm_service.repository import ExecutionRepository
 from algorithm_service.schemas import FibonacciInput
 
 WorkerOutcome = Literal["idle", "succeeded", "failed", "discarded"]
+logger = logging.getLogger(__name__)
 
 
 def process_next_execution(
@@ -47,3 +51,25 @@ def process_next_execution(
         duration_ms=duration_ms,
     )
     return "succeeded" if accepted else "discarded"
+
+
+def run_worker(
+    repository: ExecutionRepository,
+    stop_event: Event,
+    *,
+    poll_interval: float,
+    error_retry_interval: float,
+    lease_seconds: int,
+) -> None:
+    while not stop_event.is_set():
+        try:
+            outcome = process_next_execution(repository, lease_seconds=lease_seconds)
+        except SQLAlchemyError:
+            logger.exception("Worker database operation failed")
+            stop_event.wait(error_retry_interval)
+            continue
+
+        if outcome == "idle":
+            stop_event.wait(poll_interval)
+        else:
+            logger.info("Worker iteration finished: %s", outcome)
