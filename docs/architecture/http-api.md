@@ -36,4 +36,4 @@ Request models reject extra fields. Their alias configuration also accepts Pytho
 
 Each successful POST creates a distinct execution; no idempotency key or request deduplication is implemented. Unexpected internal errors remain server errors rather than being converted to success. FastAPI publishes `/docs` and `/openapi.json`; Spring OpenAPI generation is not configured yet.
 
-See [HTTP scenarios](request-scenarios.md) for successful requests, validation, upstream failures, transaction failure, and restart behavior. The API contracts describe current behavior; guarded completion and planned worker execution are covered separately in [worker scenarios](worker-scenarios.md).
+See [HTTP scenarios](request-scenarios.md) for successful requests, validation, upstream failures, transaction failure, and restart behavior. The API contracts describe current behavior; guarded completion, single-job processing, and the planned worker loop are covered separately in [worker scenarios](worker-scenarios.md).

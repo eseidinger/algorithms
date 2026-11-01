@@ -13,11 +13,11 @@ flowchart LR
     API -->|HTTP: resolve scenario version| Spring[Spring data service]
     Spring --> Catalog[(PostgreSQL: catalog)]
     API --> Jobs[(PostgreSQL: executions)]
-    Worker[Python worker - planned] -.->|reserve and complete jobs| Jobs
-    Worker -.-> Core[Independent algorithm package]
+    Worker[Worker function - explicit invocation] -->|reserve and complete jobs| Jobs
+    Worker --> Core[Independent algorithm package]
 ```
 
-The browser-to-backend connections are not drawn as implemented paths: the current React application does not issue API requests. Both database schemas reside in one local PostgreSQL instance.
+The browser-to-backend connections are not drawn as implemented paths: the current React application does not issue API requests. Both database schemas reside in one local PostgreSQL instance. The worker function can be invoked explicitly; no continuous worker process is running by default.
 
 ### React frontend
 
@@ -50,6 +50,7 @@ Source: [algorithm_service](../../apps/algorithm-service/src/algorithm_service).
 | `executions.py` | Resolve and validate scenarios, choose the algorithm/version, and coordinate persistence |
 | `models.py` | Internal typed execution record and allowed statuses |
 | `repository.py` | SQLAlchemy SQL for creation, lookup, job reservation, and guarded completion/failure |
+| `worker.py` | Process one reservation: validate, compute, record success/failure, or discard an obsolete result |
 | `config.py` | Environment-based settings and the psycopg database URL |
 
 FastAPI routes are synchronous because the HTTPX and SQLAlchemy operations are synchronous. The asynchronous lifespan manages startup and shutdown; it does not make database operations asynchronous.
@@ -58,7 +59,7 @@ FastAPI routes are synchronous because the HTTPX and SQLAlchemy operations are s
 
 Source: [packages/algorithms](../../packages/algorithms).
 
-`algorithm_lab.fibonacci.fibonacci` implements the numerical calculation without HTTP or persistence dependencies. The service depends on this package through the uv workspace. The future worker will invoke the algorithm; creating or reading an execution does not currently invoke it.
+`algorithm_lab.fibonacci.fibonacci` implements the numerical calculation without HTTP or persistence dependencies. The service depends on this package through the uv workspace. The single-job worker function invokes the algorithm; creating or reading an execution does not currently invoke it.
 
 The algorithm uses `F(0) = 0`, `F(1) = 1` and rejects negative inputs. The HTTP-facing workflow additionally restricts input to strict integers from 0 through 78, keeping results within JavaScript's safe integer range.
 
@@ -86,7 +87,7 @@ The frontend currently has neither proxy routing nor cross-origin backend calls.
 | Layer | Tools and current coverage |
 | --- | --- |
 | Algorithm | pytest and Hypothesis: known Fibonacci values, negative input, recurrence |
-| Python validation and orchestration | pytest: configuration, schemas, scenario lookup errors, input rejection, and service coordination |
+| Python validation and orchestration | pytest: configuration, schemas, scenario lookup errors, input rejection, service coordination, worker dispatch, and calculation-versus-persistence error handling |
 | Python HTTP | FastAPI TestClient: response shape, status codes, Location, request validation, and lifecycle cleanup |
 | PostgreSQL | Testcontainers: migrations, JSONB persistence, rollback, API recreation, expired leases, row locks, concurrent reservations, guarded completion, and lease checks after row-lock waits |
 | Spring | JUnit, MockMvc, Testcontainers: migrations, immutable scenarios, catalog/scenario responses and error cases |

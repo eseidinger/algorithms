@@ -2,7 +2,7 @@
 
 [Architecture overview](../architecture.md) · [Data and executions](data-and-executions.md) · [HTTP scenarios](request-scenarios.md)
 
-Status: November 1, 2026. **Reservation, lease recovery, and guarded completion/failure are implemented repository behavior.** The background worker loop, algorithm dispatch, heartbeat renewal, and cancellation workflow are not implemented. Diagrams W1–W3 and W5–W6 use repository callers; they do not claim that running workers exist. W4 describes planned worker orchestration around the implemented persistence methods.
+Status: November 1, 2026. **Reservation, lease recovery, guarded completion/failure, and single-job worker processing are implemented.** The background worker loop, CLI, heartbeat renewal, and cancellation workflow are not implemented. Diagrams W1–W3 and W5–W6 show repository callers; W4 and W7 show explicitly invoked worker processing. None implies that a continuous worker process is already running.
 
 ## W1. Competing Callers Reserve Different Jobs
 
@@ -89,13 +89,13 @@ Reservation does not terminate the old caller. If it resumes, both processes cou
 
 ## W4. Compute and Persist a Successful Result
 
-**Planned; not executable with the current worker implementation, because no worker exists yet.** Prerequisite: a worker entrypoint and algorithm dispatch are added; the guarded completion methods already exist.
+**Implemented as one explicit call to `process_next_execution()`.** Prerequisites: an eligible job exists and a caller supplies an execution repository. A continuous loop and CLI are still planned.
 
 **Trigger:** The worker receives a reservation for `fibonacci.iterative`, implementation version `1`, with input n = 10.
 
 ```mermaid
 sequenceDiagram
-    participant W as Future Python worker
+    participant W as process_next_execution
     participant R as ExecutionRepository
     participant D as PostgreSQL executions
     participant F as Independent Fibonacci function
@@ -115,15 +115,15 @@ sequenceDiagram
     R-->>W: Completion accepted
 ```
 
-**Expected outcome:** Status becomes `succeeded`, with structured result `{"value":55}`, completion timestamp, and duration. A failure path should similarly set `failed` only for the current valid attempt. API reads can then expose the saved outcome.
+**Outcome:** Status becomes `succeeded`, with structured result `{"value":55}`, completion timestamp, and duration. A calculation failure similarly sets `failed` only for the current valid attempt. API reads can then expose the saved outcome.
 
-The worker should use the stored input snapshot and should not fetch it again from Spring. Lease renewal/checkpoints and behavior for computation longer than the lease still need implementation decisions. No result transition is implied merely by having reserved the job.
+The worker should use the stored input snapshot and should not fetch it again from Spring. Timing includes validation and calculation and excludes database operations. The function returns `idle`, `succeeded`, `failed`, or `discarded`; these outcomes are not extra persisted statuses. Lease renewal and checkpoints remain unimplemented; a result whose lease expired is discarded. No result transition is implied merely by having reserved the job.
 
-**Evidence:** There is no worker orchestration test yet. The independent [Fibonacci tests](../../packages/algorithms/tests/test_fibonacci.py), [reservation tests](../../apps/algorithm-service/tests/test_reservations.py), and [completion tests](../../apps/algorithm-service/tests/test_completion.py) cover the existing building blocks separately.
+**Evidence:** [Worker unit tests](../../apps/algorithm-service/tests/test_worker.py) cover dispatch, validation, error boundaries, and discarded completions. [Worker integration tests](../../apps/algorithm-service/tests/test_worker_integration.py) verify successful computation, stored failure, and lease-expiry discard followed by retry recovery against temporary PostgreSQL. No continuously running worker or browser journey is tested yet.
 
 ## W5. Reject a Late Result from an Obsolete Attempt
 
-**Implemented repository behavior.** Prerequisite: W3 has reassigned E1 to attempt 2. The callers below invoke completion methods directly; worker integration is still planned.
+**Implemented repository behavior.** Prerequisite: W3 has reassigned E1 to attempt 2. The callers below invoke completion methods directly; continuous worker-loop integration is still planned.
 
 **Trigger:** The old worker resumes and tries to publish the result of attempt 1.
 
@@ -173,6 +173,44 @@ sequenceDiagram
 
 **Evidence:** [Completion lock-wait tests](../../apps/algorithm-service/tests/test_completion.py) observe the blocked connection in `pg_stat_activity`, expire its lease while the lock is held, then verify rejection for success and failure. No timing sleep is used to simulate expiry; the observer polls with a bounded timeout.
 
+## W7. Separate Calculation Failure from Persistence Failure
+
+**Implemented single-job behavior.** Trigger: input validation or Fibonacci raises an exception, or a persistence call fails.
+
+```mermaid
+sequenceDiagram
+    participant W as process_next_execution
+    participant F as Validation and Fibonacci
+    participant R as ExecutionRepository
+    W->>R: Reserve job
+    alt Reservation raises a database error
+        R-->>W: Exception propagates to caller
+    else Job is reserved
+        R-->>W: Running execution and attempt
+        W->>F: Check algorithm/version/input and calculate
+        alt Validation or calculation raises Exception
+            F-->>W: Calculation error
+            W->>R: fail_execution with current attempt and duration
+        else Calculation succeeds
+            F-->>W: Value
+            W->>R: complete_execution with current attempt and duration
+        end
+        alt Persistence accepts completion
+            R-->>W: True
+            Note over W: Return failed or succeeded
+        else Persistence rejects obsolete reservation
+            R-->>W: False
+            Note over W: Return discarded without fallback write
+        else Persistence raises a database error
+            R-->>W: Exception propagates to caller
+        end
+    end
+```
+
+**Outcome:** Only exceptions within validation/computation become stored calculation failures. Errors during reservation, success persistence, or failure persistence propagate; they do not trigger another completion attempt. An interrupted process can leave a running job to be recovered after lease expiry. `KeyboardInterrupt` is not caught as a calculation failure. Error text is stored internally and is not part of the public execution response.
+
+**Evidence:** [Worker unit tests](../../apps/algorithm-service/tests/test_worker.py) exercise empty queues, validation and calculation errors, both discarded outcomes, each persistence error boundary, and interruption.
+
 ## Planned Browser Acceptance Scenario
 
-Once the worker and frontend are implemented, the acceptance journey is: select a scenario, POST an execution, poll its saved URL until `succeeded`, display 55, then reload the URL and obtain the same stored result. Also submit while the worker is stopped and verify that starting it later processes the durable job. These are acceptance scenarios from the [first slice plan](../Algorithm_Lab_First_Vertical_Slice_Plan.md), not currently available browser behavior.
+Once the continuous worker process and frontend are implemented, the acceptance journey is: select a scenario, POST an execution, poll its saved URL until `succeeded`, display 55, then reload the URL and obtain the same stored result. Also submit while the worker is stopped and verify that starting it later processes the durable job. These are acceptance scenarios from the [first slice plan](../Algorithm_Lab_First_Vertical_Slice_Plan.md), not currently available browser behavior.

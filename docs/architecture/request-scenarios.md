@@ -194,7 +194,7 @@ sequenceDiagram
     Note over B,D: Reading does not contact Spring
 ```
 
-**Outcome:** No process-local cache is needed for execution durability. GET for an unknown UUID returns 404; a malformed UUID is rejected with 422. Results remain null until a future worker completes the job.
+**Outcome:** No process-local cache is needed for execution durability. GET for an unknown UUID returns 404; a malformed UUID is rejected with 422. Queued jobs have null results until `process_next_execution()` is invoked successfully or a future worker loop processes them.
 
 **Evidence:** [API integration restart scenario](../../apps/algorithm-service/tests/test_api_integration.py) recreates the API, engine, and clients against the same temporary database. It models resource recreation rather than killing an operating-system process.
 

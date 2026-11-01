@@ -176,7 +176,7 @@ curl -i -X POST http://localhost:8000/api/algorithms/executions \
   -d '{"scenarioVersionId":"00000000-0000-4000-8000-000000000010"}'
 ```
 
-POST returns HTTP 201 only after the job is committed. Its relative `Location` header points to the GET endpoint, and its body uses the same public execution representation. Follow that location on port 8000; the job remains available after restarting the API. New jobs remain `queued` until a worker is implemented. Each successful POST creates a distinct job.
+POST returns HTTP 201 only after the job is committed. Its relative `Location` header points to the GET endpoint, and its body uses the same public execution representation. Follow that location on port 8000; the job remains available after restarting the API. New jobs remain `queued` until `process_next_execution()` is invoked; an automatic worker loop is not implemented yet. Each successful POST creates a distinct job.
 
 The request accepts only a scenario-version reference; inputs are loaded from Spring. Unknown scenarios return 404, invalid requests or unsupported scenario inputs return 422, upstream connection/server failures return 503, and malformed upstream responses return 502. Unexpected internal failures return 500 without exposing exception details.
 
@@ -245,9 +245,28 @@ The synchronous `DataClient` loads scenario versions from Spring using an inject
 
 `ExecutionRepository` persists queued jobs with their scenario reference, algorithm version, and JSONB input snapshot. It commits before returning and can read jobs by UUID, returning `None` for an unknown ID. The internal `Execution` model includes status, attempt, timestamps, and optional result fields. The repository can also reserve one queued job or recover a running job whose lease has expired through `reserve_execution(lease_seconds=30)`. Selection uses `FOR UPDATE SKIP LOCKED` and updates the job in the same short transaction. Reserving sets `running`, increments `attempt`, assigns a database-clock lease deadline, and resets result/error/completion fields for the new attempt. `started_at` refers to the current attempt. A positive lease duration is required; an empty or fully reserved queue returns `None`. Terminal jobs are excluded. The transaction commits before the reservation is returned; computation will happen outside it.
 
-This repository does not call Spring or execute algorithms. `complete_execution()` and `fail_execution()` persist success or failure only for a matching running attempt with a valid lease. They lock the row first, then check `clock_timestamp()` in the guarded update so time is re-evaluated after any lock wait. Accepted updates save duration and finish time and clear the lease; success saves a JSONB result and clears the error, while failure saves the error and clears the result. They return `True` after commit or `False` without changing an ineligible job. Worker execution and lease renewal are still pending.
+This repository does not call Spring or execute algorithms. `complete_execution()` and `fail_execution()` persist success or failure only for a matching running attempt with a valid lease. They lock the row first, then check `clock_timestamp()` in the guarded update so time is re-evaluated after any lock wait. Accepted updates save duration and finish time and clear the lease; success saves a JSONB result and clears the error, while failure saves the error and clears the result. They return `True` after commit or `False` without changing an ineligible job. `process_next_execution()` in `worker.py` processes at most one job. It reserves work, checks the algorithm and implementation version, validates the stored Fibonacci input, runs the independent function, and uses the guarded completion methods. It returns `idle`, `succeeded`, `failed`, or `discarded`; these are function outcomes rather than additional database statuses. Timing includes input checks and computation but excludes reservation and completion database calls. Exceptions during checks/computation are recorded as internal job errors; database errors during reservation or persistence propagate. A rejected completion is discarded without an unguarded retry or failure fallback. The continuous loop, worker CLI, and lease renewal are still pending.
 
-`ExecutionService` combines the Spring client and repository: it accepts only showcase `K01`, validates Fibonacci input as a strict integer from 0 through 78, and persists the validated snapshot with algorithm ID `fibonacci.iterative` and implementation version `1`. Invalid scenarios and upstream failures do not create jobs. Existing executions are read without contacting Spring; unknown IDs raise `ExecutionNotFound`. Service tests isolate HTTP and persistence dependencies and verify these behaviors. FastAPI POST/GET routes and application lifecycle are implemented; worker integration is still pending.
+To process one queued or expired job manually from the repository root:
+
+```bash
+PGPASSWORD=execution_local uv run --package algorithm-service python - <<'PYWORKER'
+from algorithm_service.config import Settings
+from algorithm_service.database import create_database_engine
+from algorithm_service.repository import ExecutionRepository
+from algorithm_service.worker import process_next_execution
+
+engine = create_database_engine(Settings())
+try:
+    print(process_next_execution(ExecutionRepository(engine)))
+finally:
+    engine.dispose()
+PYWORKER
+```
+
+This changes a real job in the development database; it selects the oldest eligible job rather than a requested ID. Spring does not need to be running because inputs are already stored. GET the job afterward to inspect its result or failure status.
+
+`ExecutionService` combines the Spring client and repository: it accepts only showcase `K01`, validates Fibonacci input as a strict integer from 0 through 78, and persists the validated snapshot with algorithm ID `fibonacci.iterative` and implementation version `1`. Invalid scenarios and upstream failures do not create jobs. Existing executions are read without contacting Spring; unknown IDs raise `ExecutionNotFound`. Service tests isolate HTTP and persistence dependencies and verify these behaviors. FastAPI POST/GET routes and application lifecycle are implemented; the single-job processor is available, while the continuous worker loop is still pending.
 
 Run the PostgreSQL integration tests separately with Docker available:
 
@@ -255,7 +274,7 @@ Run the PostgreSQL integration tests separately with Docker available:
 uv run --all-packages pytest -m integration
 ```
 
-Testcontainers creates a disposable PostgreSQL instance on a dynamically assigned port. The migration test applies Alembic, verifies allowed statuses and invalid status/attempt rejection, checks repeated upgrades, and exercises downgrade and recreation. Repository tests verify committed jobs through a separate engine, JSONB snapshots and defaults, unknown IDs, and recovery after a failed insert. Reservation tests cover lease expiry and retry state, skipped row locks, terminal jobs, and concurrent workers contending for one job. Completion tests cover success/failure, expired leases, stale attempts, terminal jobs, competing outcomes, and lease expiry while waiting for a row lock. API integration tests combine real service and repository code with temporary PostgreSQL and simulated Spring HTTP responses. They verify POST/GET persistence across fresh API instances and ensure failed scenario resolution or validation does not persist jobs. These tests do not connect to the Compose database or a running Spring instance. To run both unit and integration tests together:
+Testcontainers creates a disposable PostgreSQL instance on a dynamically assigned port. The migration test applies Alembic, verifies allowed statuses and invalid status/attempt rejection, checks repeated upgrades, and exercises downgrade and recreation. Repository tests verify committed jobs through a separate engine, JSONB snapshots and defaults, unknown IDs, and recovery after a failed insert. Reservation tests cover lease expiry and retry state, skipped row locks, terminal jobs, and concurrent workers contending for one job. Completion tests cover success/failure, expired leases, stale attempts, terminal jobs, competing outcomes, and lease expiry while waiting for a row lock. API integration tests combine real service and repository code with temporary PostgreSQL and simulated Spring HTTP responses. They verify POST/GET persistence across fresh API instances and ensure failed scenario resolution or validation does not persist jobs. Worker integration tests cover the full queued-to-succeeded transition, persisted calculation failure, and discarding an expired result followed by retry recovery. These tests do not connect to the Compose database or a running Spring instance. To run both unit and integration tests together:
 
 ```bash
 uv run --all-packages pytest -m ""

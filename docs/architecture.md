@@ -12,7 +12,7 @@ See [Local Development](development.md) for installation, startup, builds, tests
 | [Data and executions](architecture/data-and-executions.md) | Ownership, entity relationships, scenario identity, execution state, leases, and migrations |
 | [HTTP contracts](architecture/http-api.md) | Implemented endpoints, request/response representation, status codes, and compatibility behavior |
 | [HTTP scenarios](architecture/request-scenarios.md) | Sequence diagrams for catalog access, creation, validation, upstream/storage errors, and reads after restart |
-| [Reservation and worker scenarios](architecture/worker-scenarios.md) | Sequence diagrams for competing callers, empty queues, lease recovery, guarded completion, and planned worker execution |
+| [Reservation and worker scenarios](architecture/worker-scenarios.md) | Sequence diagrams for competing callers, empty queues, lease recovery, guarded completion, single-job processing, and the planned worker loop |
 
 Read the current scope below first. For implementation work, follow the relevant contract and data document, then the corresponding scenario. Each scenario identifies its prerequisites, trigger, and expected outcome. A planned participant or message does not imply that its implementation exists.
 
@@ -28,16 +28,17 @@ Algorithm Lab connects independent algorithm implementations with an interactive
 | FastAPI algorithm service | Create and read executions; Spring scenario lookup, validation, persistence, and resource lifecycle |
 | Execution reservation | Repository method with expiring leases, attempt tracking, and concurrent reservation protection |
 | Execution completion | Repository methods for guarded success/failure, including lease checks after row-lock waits |
-| Worker | Planned: computation, orchestration of failure handling, and a processing loop |
+| Worker function | Processes one job, validates algorithm/version/input, computes Fibonacci, and records or discards the outcome |
+| Worker process | Planned: continuous polling loop, CLI, and shutdown handling |
 | Web server / reverse proxy | Planned: serve the static frontend and route requests to both APIs |
 | Additional data stores / outbox | Planned in later slices; not dependencies of this slice |
 
-The current API can persist a job as `queued`. Repository code can transition it to `running` and then to `succeeded` or `failed`, but there is no running worker that invokes these methods or computes results. The complete browser workflow is not yet available.
+The current API can persist a job as `queued`. Repository code can transition it to `running` and then to `succeeded` or `failed`, and `process_next_execution()` now combines these operations with computation. A continuously running worker process is not implemented yet. The complete browser workflow is not yet available.
 
 ## Next Increments and Extension Points
 
-1. Add worker dispatch and computation using the implemented guarded success/failure methods.
-2. Add the worker loop and verify recovery and processing of jobs submitted while it is stopped.
+1. Add the worker loop and CLI around `process_next_execution()`, with polling and shutdown handling.
+2. Verify processing of jobs submitted while the worker process is stopped, then start it to drain the queue.
 3. Connect React to catalog/scenario selection, execution creation, polling, and persistent execution URLs. Scenario discovery beyond the current known fixture ID still needs a UI/API decision.
 4. Add web-server routing, container packaging, deployment declarations, and migration sequencing.
 5. Verify the complete browser workflow.

@@ -91,9 +91,9 @@ stateDiagram-v2
 
 An accepted update records duration and `finished_at`, clears the lease, and sets `succeeded` with a result or `failed` with an error. Existing attempt/start metadata is retained. The method returns `True` only after commit; unknown, expired, terminal, or mismatched jobs return `False` without mutation. Competing completion calls cannot both succeed.
 
-`cancelled` is permitted by the schema, but a cancellation workflow, lease renewal, and worker loop are not implemented. Repository operations remain callable code rather than an active background process.
+`cancelled` is permitted by the schema, but a cancellation workflow, lease renewal, and worker loop are not implemented. Repository operations are now combined by `process_next_execution()` for one job, but no continuous background process is implemented.
 
-The future worker must compute outside the reservation transaction and condition completion on the execution ID, current attempt, running state, and valid lease. A lease expiry cannot physically stop an old process from computing. The implemented guarded updates prevent an obsolete attempt from overwriting a newer result; they are not an exactly-once computation guarantee.
+The worker function computes outside the reservation transaction and completes through methods that check execution ID, current attempt, running state, and valid lease. A lease expiry cannot physically stop an old process from computing. The implemented guarded updates prevent an obsolete attempt from overwriting a newer result; they are not an exactly-once computation guarantee.
 
 ## Migration Boundaries
 
