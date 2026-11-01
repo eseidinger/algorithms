@@ -1,5 +1,7 @@
 # Local Development, Builds, and Database Migrations
 
+See the [architecture overview](architecture.md) for component responsibilities, contracts, and scenario sequence diagrams.
+
 ## Current Scope
 
 The repository contains a React/TypeScript frontend, a Kotlin/Spring Boot data service, a Python service package, and an independent Python algorithm package. PostgreSQL runs in Docker; applications run directly on the host during development.

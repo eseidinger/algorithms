@@ -69,4 +69,4 @@ See [Local Development, Builds, and Database Migrations](docs/development.md) fo
 
 ## Architecture
 
-See [Architecture](docs/architecture.md) for component boundaries, data ownership, API flows, execution leases, and planned extensions.
+See [Architecture](docs/architecture.md) for the documentation map, component boundaries, data ownership, and scenario sequence diagrams covering API requests, execution leases, and planned worker behavior.

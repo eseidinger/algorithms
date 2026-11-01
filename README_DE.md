@@ -75,4 +75,4 @@ Die englische Anleitung [Local Development, Builds, and Database Migrations](doc
 
 ## Architektur
 
-Die englische [Architekturdokumentation](docs/architecture.md) beschreibt Komponenten, Datenverantwortung, API-Abläufe, Auftragsreservierungen und geplante Erweiterungen.
+Die englische [Architekturdokumentation](docs/architecture.md) führt zu den Teildokumenten für Komponenten, Datenverantwortung und Sequenzdiagramme zu API-Szenarien, Auftragsreservierungen und geplantem Worker-Verhalten.
