@@ -1,12 +1,15 @@
 import {
   Alert,
+  Button,
   Card,
+  CardActions,
   CardContent,
   CircularProgress,
   Stack,
   Typography,
 } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
+import { Link as RouterLink } from 'react-router'
 import { getShowcases } from '../../api/catalog'
 
 export default function CatalogPage() {
@@ -44,6 +47,13 @@ export default function CatalogPage() {
                 </Typography>
                 <Typography>{showcase.description}</Typography>
               </CardContent>
+              {showcase.id === 'K01' && (
+                <CardActions>
+                  <Button component={RouterLink} to="/showcases/K01">
+                    Open showcase
+                  </Button>
+                </CardActions>
+              )}
             </Card>
           ))}
         </Stack>

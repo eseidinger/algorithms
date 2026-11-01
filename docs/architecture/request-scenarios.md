@@ -2,7 +2,7 @@
 
 [Architecture overview](../architecture.md) · [HTTP contracts](http-api.md) · [Components](components-and-runtime.md)
 
-Status: November 1, 2026. These scenarios describe implemented backend behavior. R0 describes the connected React catalog. R1–R7 use a generic API client; React does not yet load individual scenarios or create/read executions. Catalog and execution stores in the diagrams are separate schemas in the same PostgreSQL instance.
+Status: November 1, 2026. These scenarios describe implemented backend behavior. R0 and R0.1 describe the connected React flow. R1–R7 detail backend flows using a generic API client; React now loads the seeded scenario and creates executions, but does not read execution status yet. Catalog and execution stores in the diagrams are separate schemas in the same PostgreSQL instance.
 
 ## R0. Load the Catalog in the Browser
 
@@ -31,9 +31,40 @@ sequenceDiagram
     end
 ```
 
-HTTP, network, invalid JSON, and invalid data-shape failures enter the query error path. The query retries once and then displays a readable error message. The query's cancellation signal is passed to fetch. Catalog rendering does not trigger a scenario request or execution creation; those UI steps are still pending. Production routing needs the planned reverse proxy rather than relying on the Vite development server.
+HTTP, network, invalid JSON, and invalid data-shape failures enter the query error path. The query retries once and then displays a readable error message. The query's cancellation signal is passed to fetch. Catalog rendering does not trigger a scenario request or execution creation; opening the K01 link starts the scenario query. Production routing needs the planned reverse proxy rather than relying on the Vite development server.
 
 **Evidence:** [Catalog API tests](../../apps/web/src/api/catalog.test.ts), [catalog component tests](../../apps/web/src/features/catalog/CatalogPage.test.tsx), and [application composition test](../../apps/web/src/App.test.tsx). They use mocked fetch and isolated QueryClient instances; they do not run the real Vite proxy or Spring. Spring's HTTP tests cover its backend contract separately.
+
+## R0.1. Open Fibonacci and Start an Execution
+
+**Implemented.** Prerequisites: Vite, Spring, PostgreSQL, and FastAPI are running. The worker is only needed for subsequent computation. The page uses the known seeded scenario-version ID; scenario discovery is not implemented.
+
+```mermaid
+sequenceDiagram
+    actor B as Browser user
+    participant R as React and TanStack Query
+    participant V as Vite development proxy
+    participant S as Spring catalog API
+    participant A as FastAPI
+    B->>R: Open K01 card or /showcases/K01 directly
+    R->>V: GET /api/data/scenario-versions/ID
+    V->>S: Forward scenario request
+    S-->>R: Scenario metadata and input through proxy
+    R->>R: Validate identity and Fibonacci input with Zod
+    R-->>B: Show immutable n = 10 and Run Fibonacci
+    B->>R: Click Run Fibonacci
+    R->>R: Disable button while pending
+    R->>V: POST /api/algorithms/executions with scenarioVersionId
+    V->>A: Forward creation request
+    Note over A: Resolve, validate, and commit as described in R2
+    A-->>R: 201 creation receipt through proxy
+    R->>R: Validate UUID and queued status
+    R-->>B: Display execution ID and re-enable button
+```
+
+Invalid or unavailable scenarios show an error without a start button. Failed creation or receipt validation shows a confirmation error. POST has no automatic retries because response loss can occur after commit; a later manual click can create another job. The UI does not yet navigate to an execution URL or poll status.
+
+**Evidence:** [Scenario API tests](../../apps/web/src/api/scenarios.test.ts), [execution API tests](../../apps/web/src/api/executions.test.ts), [Fibonacci page tests](../../apps/web/src/features/fibonacci/FibonacciPage.test.tsx), and [routing tests](../../apps/web/src/App.test.tsx). These use simulated fetch responses rather than live backends.
 
 ## R1. Browse the Catalog and Load a Scenario
 

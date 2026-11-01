@@ -6,7 +6,7 @@ See the [architecture overview](architecture.md) for component responsibilities,
 
 The repository contains a React/TypeScript frontend, a Kotlin/Spring Boot data service, a Python service package, and an independent Python algorithm package. PostgreSQL runs in Docker; applications run directly on the host during development.
 
-The frontend renders the application shell and loads the showcase catalog from Spring, with loading, empty, and error states. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. A separately started worker processes durable jobs continuously. The complete browser Fibonacci workflow is not implemented yet.
+The frontend loads the showcase catalog from Spring and links to the Fibonacci scenario page. That page displays the immutable input and starts an execution through FastAPI, showing its ID after creation. Loading and error states are handled. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. A separately started worker processes durable jobs continuously. The complete browser Fibonacci workflow is not implemented yet.
 
 ## Prerequisites
 
@@ -160,7 +160,7 @@ The Vite development proxy forwards `/api/data` to `http://127.0.0.1:8080` and `
 curl -i http://localhost:5173/api/data/showcases
 ```
 
-A running Spring service should return the same catalog through this URL as through port 8080. Algorithm API proxying is configured for the next UI increment; scenario selection, execution creation, execution URLs, and status polling are not implemented in React yet. Production deployment still needs the planned web server/reverse proxy.
+A running Spring service should return the same catalog through this URL as through port 8080. Open the K01 card to navigate to `/showcases/K01`, which also supports direct entry. This page loads the seeded scenario version and displays its read-only input (`n = 10`). With FastAPI running, click **Run Fibonacci** to POST only the scenario-version reference and display the created execution ID. The button is disabled while the request is pending; POST is never retried automatically. A failed confirmation can still mean the server created a job. Each new click can create another job. The worker is needed to calculate the result, but not to create the job. Persistent execution URLs and status polling remain to be implemented; use the execution GET endpoint below with the displayed ID. Production deployment still needs the planned web server/reverse proxy.
 
 ### Python execution API
 
@@ -228,7 +228,7 @@ npm --prefix apps/web run format:check
 npm --prefix apps/web test
 ```
 
-Vitest and React Testing Library run application-shell and catalog-state tests in jsdom. API tests check runtime validation, HTTP/network/JSON failures, and AbortSignal forwarding. Tests stub fetch and create a fresh QueryClient per render to avoid shared cache state; retry delays are disabled in tests. They do not require running backends or verify an actual browser-to-Spring proxy connection. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
+Vitest and React Testing Library run application-shell, catalog, route navigation, direct scenario entry, and execution-creation tests in jsdom. They verify read-only scenario input, pending-button disabling, creation receipts, error states, and no automatic POST retries. API tests check runtime validation, HTTP/network/JSON failures, and AbortSignal forwarding. Tests stub fetch and create a fresh QueryClient per render to avoid shared cache state; retry delays are disabled in tests. They do not require running backends or verify an actual browser-to-Spring proxy connection. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
 
 The build runs TypeScript checking followed by Vite and writes static assets to `apps/web/dist/`. To inspect that build locally:
 

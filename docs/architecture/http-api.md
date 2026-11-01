@@ -37,3 +37,5 @@ Request models reject extra fields. Their alias configuration also accepts Pytho
 Each successful POST creates a distinct execution; no idempotency key or request deduplication is implemented. Unexpected internal errors remain server errors rather than being converted to success. FastAPI publishes `/docs` and `/openapi.json`; Spring OpenAPI generation is not configured yet.
 
 See [HTTP scenarios](request-scenarios.md) for successful requests, validation, upstream failures, transaction failure, and restart behavior. The API contracts describe current behavior; guarded completion, single-job processing, and worker lifecycle are covered separately in [worker scenarios](worker-scenarios.md).
+
+The React Fibonacci page consumes the seeded scenario endpoint and POST creation endpoint. It validates scenario identity, K01, and integer input from 0 through 78 with Zod. For creation it validates the receipt UUID and `queued` status, then displays the ID inline. Execution detail reads and polling are not connected to React yet.

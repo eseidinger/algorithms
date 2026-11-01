@@ -1,5 +1,7 @@
 import { AppBar, Container, Toolbar, Typography } from '@mui/material'
+import { Route, Routes } from 'react-router'
 import CatalogPage from './features/catalog/CatalogPage'
+import FibonacciPage from './features/fibonacci/FibonacciPage'
 
 export default function App() {
   return (
@@ -13,7 +15,11 @@ export default function App() {
       </AppBar>
 
       <Container component="main" maxWidth="lg" sx={{ py: 4 }}>
-        <CatalogPage />
+        <Routes>
+          <Route path="/" element={<CatalogPage />} />
+          <Route path="/showcases/K01" element={<FibonacciPage />} />
+          <Route path="*" element={<Typography>Page not found.</Typography>} />
+        </Routes>
       </Container>
     </>
   )
