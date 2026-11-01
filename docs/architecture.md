@@ -22,7 +22,7 @@ Algorithm Lab connects independent algorithm implementations with an interactive
 
 | Component or capability | Current state |
 | --- | --- |
-| React application | Catalog fetched from Spring via Vite proxy and validated with Zod; loading/empty/error states; Fibonacci scenario route and execution creation with an inline ID receipt; execution status view pending |
+| React application | Catalog fetched from Spring via Vite proxy and validated with Zod; loading/empty/error states; Fibonacci scenario route and execution creation followed by a persistent detail URL, status polling, and result display |
 | Spring data service | Read-only catalog and immutable scenario-version APIs; Flyway migrations and health endpoints |
 | Python algorithm package | Iterative Fibonacci implementation with reference and property tests |
 | FastAPI algorithm service | Create and read executions; Spring scenario lookup, validation, persistence, and resource lifecycle |
@@ -33,11 +33,11 @@ Algorithm Lab connects independent algorithm implementations with an interactive
 | Web server / reverse proxy | Planned: serve the static frontend and route requests to both APIs |
 | Additional data stores / outbox | Planned in later slices; not dependencies of this slice |
 
-The current API can persist a job as `queued`. Repository code can transition it to `running` and then to `succeeded` or `failed`, and `process_next_execution()` now combines these operations with computation. The separate `algorithm-worker` CLI now runs this processing continuously when started. The complete browser workflow is not yet available.
+The current API can persist a job as `queued`. Repository code can transition it to `running` and then to `succeeded` or `failed`, and `process_next_execution()` now combines these operations with computation. The separate `algorithm-worker` CLI now runs this processing continuously when started. The browser now creates a Fibonacci job, follows its persistent execution URL, polls until completion, and displays the result.
 
 ## Next Increments and Extension Points
 
-1. Add an execution detail page with persistent execution URLs and status polling to the connected React catalog and Fibonacci start flow. Scenario discovery beyond the current known fixture ID still needs a UI/API decision.
+1. Exercise the complete browser flow against the running local services and prepare production routing and deployment. Scenario discovery beyond the current known fixture ID still needs a UI/API decision.
 2. Add web-server routing, container packaging, deployment declarations, and migration sequencing.
 3. Verify the complete browser workflow.
 

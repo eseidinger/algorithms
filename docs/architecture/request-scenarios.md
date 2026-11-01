@@ -2,7 +2,7 @@
 
 [Architecture overview](../architecture.md) · [HTTP contracts](http-api.md) · [Components](components-and-runtime.md)
 
-Status: November 1, 2026. These scenarios describe implemented backend behavior. R0 and R0.1 describe the connected React flow. R1–R7 detail backend flows using a generic API client; React now loads the seeded scenario and creates executions, but does not read execution status yet. Catalog and execution stores in the diagrams are separate schemas in the same PostgreSQL instance.
+Status: November 1, 2026. These scenarios describe implemented backend behavior. R0 and R0.1 describe the connected React flow. R1–R7 detail backend flows using a generic API client; React now loads the seeded scenario and creates executions, and reads execution status with polling. Catalog and execution stores in the diagrams are separate schemas in the same PostgreSQL instance.
 
 ## R0. Load the Catalog in the Browser
 
@@ -59,12 +59,45 @@ sequenceDiagram
     Note over A: Resolve, validate, and commit as described in R2
     A-->>R: 201 creation receipt through proxy
     R->>R: Validate UUID and queued status
-    R-->>B: Display execution ID and re-enable button
+    R-->>B: Navigate to /executions/ID
 ```
 
-Invalid or unavailable scenarios show an error without a start button. Failed creation or receipt validation shows a confirmation error. POST has no automatic retries because response loss can occur after commit; a later manual click can create another job. The UI does not yet navigate to an execution URL or poll status.
+Invalid or unavailable scenarios show an error without a start button. Failed creation or receipt validation shows a confirmation error. POST has no automatic retries because response loss can occur after commit; a later manual click can create another job. The detail route loads the full execution separately; the reduced creation receipt is not stored as full query data.
 
 **Evidence:** [Scenario API tests](../../apps/web/src/api/scenarios.test.ts), [execution API tests](../../apps/web/src/api/executions.test.ts), [Fibonacci page tests](../../apps/web/src/features/fibonacci/FibonacciPage.test.tsx), and [routing tests](../../apps/web/src/App.test.tsx). These use simulated fetch responses rather than live backends.
+
+## R0.2. Follow an Execution to Its Result
+
+**Implemented.** The detail URL works after creation, direct navigation, or reload. FastAPI and PostgreSQL are required for reads; Spring is not contacted by execution GET. The worker must run to advance a queued job.
+
+```mermaid
+sequenceDiagram
+    actor B as Browser user
+    participant R as React and TanStack Query
+    participant V as Vite development proxy
+    participant A as FastAPI
+    participant D as PostgreSQL executions
+    B->>R: Open /executions/ID
+    R->>R: Validate UUID
+    R->>V: GET /api/algorithms/executions/ID
+    V->>A: Forward full path
+    A->>D: Read persisted execution
+    D-->>A: Execution
+    A-->>R: 200 response through proxy
+    R->>R: Validate response and matching identity
+    loop While queued or running, once per second
+        R->>V: GET same execution
+        V->>A: Forward request
+        A->>D: Read current state
+        D-->>A: Current execution
+        A-->>R: Current state through proxy
+    end
+    R-->>B: Terminal status, result and duration when present
+```
+
+Invalid UUIDs make no request. HTTP 404 displays a not-found message. Other HTTP, network, JSON, or validation failures display a generic loading error and stop interval polling. **Retry** reloads GET only. A failed job shows a generic failure message because internal errors are not public. Polling stops at success, failure, or cancellation; cancellation has no action in the current application.
+
+**Evidence:** [Execution API tests](../../apps/web/src/api/executions.test.ts) cover validation, identity, errors, and cancellation forwarding. [Execution page tests](../../apps/web/src/features/executions/ExecutionPage.test.tsx) cover direct entry, navigation after POST, loading/errors, GET-only retry, and controlled-timer polling. These tests simulate fetch rather than running the services.
 
 ## R1. Browse the Catalog and Load a Scenario
 

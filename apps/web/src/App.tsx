@@ -1,6 +1,7 @@
 import { AppBar, Container, Toolbar, Typography } from '@mui/material'
 import { Route, Routes } from 'react-router'
 import CatalogPage from './features/catalog/CatalogPage'
+import ExecutionPage from './features/executions/ExecutionPage'
 import FibonacciPage from './features/fibonacci/FibonacciPage'
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<CatalogPage />} />
           <Route path="/showcases/K01" element={<FibonacciPage />} />
+          <Route path="/executions/:executionId" element={<ExecutionPage />} />
           <Route path="*" element={<Typography>Page not found.</Typography>} />
         </Routes>
       </Container>

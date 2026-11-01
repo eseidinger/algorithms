@@ -6,6 +6,7 @@ import {
   Typography,
 } from '@mui/material'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router'
 import { createExecution } from '../../api/executions'
 import {
   FIBONACCI_SCENARIO_VERSION_ID,
@@ -13,6 +14,7 @@ import {
 } from '../../api/scenarios'
 
 export default function FibonacciPage() {
+  const navigate = useNavigate()
   const scenario = useQuery({
     queryKey: ['scenario-version', FIBONACCI_SCENARIO_VERSION_ID],
     queryFn: ({ signal }) => getFibonacciScenario(signal),
@@ -22,6 +24,7 @@ export default function FibonacciPage() {
   const execution = useMutation({
     mutationFn: createExecution,
     retry: false,
+    onSuccess: (created) => navigate(`/executions/${created.id}`),
   })
 
   if (scenario.isPending) {
@@ -52,12 +55,6 @@ export default function FibonacciPage() {
 
       {execution.isError && (
         <Alert severity="error">Could not confirm the execution.</Alert>
-      )}
-
-      {execution.isSuccess && (
-        <Alert severity="success">
-          Execution created. ID: {execution.data.id}
-        </Alert>
       )}
     </Stack>
   )

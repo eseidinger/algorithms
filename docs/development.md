@@ -6,7 +6,7 @@ See the [architecture overview](architecture.md) for component responsibilities,
 
 The repository contains a React/TypeScript frontend, a Kotlin/Spring Boot data service, a Python service package, and an independent Python algorithm package. PostgreSQL runs in Docker; applications run directly on the host during development.
 
-The frontend loads the showcase catalog from Spring and links to the Fibonacci scenario page. That page displays the immutable input and starts an execution through FastAPI, showing its ID after creation. Loading and error states are handled. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. A separately started worker processes durable jobs continuously. The complete browser Fibonacci workflow is not implemented yet.
+The frontend loads the showcase catalog from Spring and links to the Fibonacci scenario page. That page displays the immutable input and starts an execution through FastAPI, navigating to its persistent detail URL after creation. Loading and error states are handled. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. A separately started worker processes durable jobs continuously. The browser can follow a Fibonacci job through polling to its result.
 
 ## Prerequisites
 
@@ -160,7 +160,7 @@ The Vite development proxy forwards `/api/data` to `http://127.0.0.1:8080` and `
 curl -i http://localhost:5173/api/data/showcases
 ```
 
-A running Spring service should return the same catalog through this URL as through port 8080. Open the K01 card to navigate to `/showcases/K01`, which also supports direct entry. This page loads the seeded scenario version and displays its read-only input (`n = 10`). With FastAPI running, click **Run Fibonacci** to POST only the scenario-version reference and display the created execution ID. The button is disabled while the request is pending; POST is never retried automatically. A failed confirmation can still mean the server created a job. Each new click can create another job. The worker is needed to calculate the result, but not to create the job. Persistent execution URLs and status polling remain to be implemented; use the execution GET endpoint below with the displayed ID. Production deployment still needs the planned web server/reverse proxy.
+A running Spring service should return the same catalog through this URL as through port 8080. Open the K01 card to navigate to `/showcases/K01`, which also supports direct entry. This page loads the seeded scenario version and displays its read-only input (`n = 10`). With FastAPI running, click **Run Fibonacci** to POST only the scenario-version reference and navigate to `/executions/{id}`. The button is disabled while the request is pending; POST is never retried automatically. A failed confirmation can still mean the server created a job. Each new click can create another job. The worker is needed to calculate the result, but not to create the job. The execution page also supports direct entry and reloads. It polls GET every second while `queued` or `running`, stops on a terminal state, and displays the result and duration. Invalid IDs make no request; HTTP 404 has a distinct message. A request failure stops interval polling; **Retry** repeats only GET, never POST. Production deployment still needs the planned web server/reverse proxy.
 
 ### Python execution API
 
@@ -228,7 +228,7 @@ npm --prefix apps/web run format:check
 npm --prefix apps/web test
 ```
 
-Vitest and React Testing Library run application-shell, catalog, route navigation, direct scenario entry, and execution-creation tests in jsdom. They verify read-only scenario input, pending-button disabling, creation receipts, error states, and no automatic POST retries. API tests check runtime validation, HTTP/network/JSON failures, and AbortSignal forwarding. Tests stub fetch and create a fresh QueryClient per render to avoid shared cache state; retry delays are disabled in tests. They do not require running backends or verify an actual browser-to-Spring proxy connection. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
+Vitest and React Testing Library run application-shell, catalog, route navigation, direct scenario entry, and execution-creation tests in jsdom. They verify read-only scenario input, pending-button disabling, creation receipts, detail navigation and direct URLs, error states, and no automatic POST retries. Controlled-timer tests verify queued/running polling, stopping on terminal states or request errors, and GET-only manual retries. API tests check runtime validation, HTTP/network/JSON failures, and AbortSignal forwarding. Tests stub fetch and create a fresh QueryClient per render to avoid shared cache state; retry delays are disabled in tests. They do not require running backends or verify an actual browser-to-Spring proxy connection. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
 
 The build runs TypeScript checking followed by Vite and writes static assets to `apps/web/dist/`. To inspect that build locally:
 
@@ -269,7 +269,7 @@ The same CLI can be invoked as `python -m algorithm_service.worker_cli` through 
 
 Stop with Ctrl+C (`SIGINT`) or send `SIGTERM`. The signal sets a stop event, interrupts polling/error waits, and prevents another iteration after the current one finishes. Current computation and database calls are not forcibly cancelled. The CLI closes the engine and restores previous handlers even if the loop fails. Unexpected startup/loop errors terminate the process rather than being reported as successful jobs.
 
-For the backend acceptance check, stop the worker, POST a job through the API, confirm GET shows `queued`, start the worker, and GET the same URL until it shows `succeeded` and `{"value":55}`. The frontend does not perform this flow yet.
+For the backend acceptance check, stop the worker, POST a job through the API, confirm GET shows `queued`, start the worker, and GET the same URL until it shows `succeeded` and `{"value":55}`. For browser acceptance, start the job on `/showcases/K01` with the worker stopped, confirm the detail page shows `queued`, reload that URL, then start the worker. The page should display result `55` automatically; the short `running` state may fall between polls.
 
 To process one queued or expired job manually from the repository root:
 

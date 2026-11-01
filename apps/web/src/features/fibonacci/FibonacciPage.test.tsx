@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createdExecution, fibonacciScenario } from '../../test/fixtures'
 import { renderWithQueryClient } from '../../test/renderWithQueryClient'
 import FibonacciPage from './FibonacciPage'
+import { Route, Routes } from 'react-router'
 
 function mockRequests(
   post: () => Promise<Response> = () =>
@@ -84,7 +85,15 @@ describe('Fibonacci scenario page', () => {
       resolve = respond
     })
     const fetchMock = mockRequests(() => pending)
-    renderWithQueryClient(<FibonacciPage />)
+    renderWithQueryClient(
+      <Routes>
+        <Route path="/" element={<FibonacciPage />} />
+        <Route
+          path="/executions/:executionId"
+          element={<div>Execution detail destination</div>}
+        />
+      </Routes>,
+    )
 
     fireEvent.click(
       await screen.findByRole('button', { name: 'Run Fibonacci' }),
@@ -109,10 +118,9 @@ describe('Fibonacci scenario page', () => {
     await act(async () => {
       resolve(Response.json(createdExecution, { status: 201 }))
     })
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      `Execution created. ID: ${createdExecution.id}`,
-    )
-    expect(screen.getByRole('button', { name: 'Run Fibonacci' })).toBeEnabled()
+    expect(
+      await screen.findByText('Execution detail destination'),
+    ).toBeVisible()
   })
 
   it.each([

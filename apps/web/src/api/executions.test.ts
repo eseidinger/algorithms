@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createdExecution, fibonacciScenario } from '../test/fixtures'
-import { createExecution } from './executions'
+import {
+  createExecution,
+  getExecution,
+  ExecutionNotFoundError,
+} from './executions'
 
 describe('execution creation API', () => {
   it('posts only the scenario reference and validates the receipt', async () => {
@@ -55,5 +59,63 @@ describe('execution creation API', () => {
       'Connection lost',
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('execution reads', () => {
+  it('loads a validated execution and forwards cancellation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(createdExecution))
+    vi.stubGlobal('fetch', fetchMock)
+    const signal = new AbortController().signal
+    await expect(getExecution(createdExecution.id, signal)).resolves.toEqual(
+      createdExecution,
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/algorithms/executions/${createdExecution.id}`,
+      { signal },
+    )
+  })
+
+  it('rejects an invalid ID before making a request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getExecution('invalid')).rejects.toThrow()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes not found from other HTTP failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 404 })),
+    )
+    await expect(getExecution(createdExecution.id)).rejects.toBeInstanceOf(
+      ExecutionNotFoundError,
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 500 })),
+    )
+    await expect(getExecution(createdExecution.id)).rejects.toThrow(
+      'Could not load the execution',
+    )
+  })
+
+  it.each([
+    { ...createdExecution, id: fibonacciScenario.id },
+    { ...createdExecution, status: 'unknown' },
+    { ...createdExecution, status: 'succeeded', result: null },
+    { ...createdExecution, result: { value: '55' } },
+    { ...createdExecution, durationMs: -1 },
+    { ...createdExecution, createdAt: 'yesterday' },
+  ])('rejects malformed or mismatched execution %#', async (payload) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(payload)))
+    await expect(getExecution(createdExecution.id)).rejects.toThrow()
+  })
+
+  it('propagates network and invalid JSON failures', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Offline')))
+    await expect(getExecution(createdExecution.id)).rejects.toThrow('Offline')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{')))
+    await expect(getExecution(createdExecution.id)).rejects.toThrow()
   })
 })

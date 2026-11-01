@@ -18,13 +18,13 @@ flowchart LR
     Worker --> Core[Independent algorithm package]
 ```
 
-React requests the Spring catalog and seeded scenario through Vite and creates executions through the FastAPI proxy. Execution reads and polling are not connected to the UI yet. Both database schemas reside in one local PostgreSQL instance. The worker is started separately through `algorithm-worker`; Compose does not automatically launch it or the APIs.
+React requests the Spring catalog and seeded scenario through Vite and creates executions through the FastAPI proxy. The execution route reads persisted jobs through FastAPI and polls while they are queued or running. Both database schemas reside in one local PostgreSQL instance. The worker is started separately through `algorithm-worker`; Compose does not automatically launch it or the APIs.
 
 ### React frontend
 
 Source: [apps/web](../../apps/web).
 
-React and TypeScript define the interface; Vite provides local development and static production builds. MUI supplies the theme, baseline styles, and components. `BrowserRouter` and `QueryClientProvider` are configured. `CatalogPage` uses a `showcases` query, displays cards and loading/empty/error states, and retries failed requests once. `/showcases/K01` loads the known immutable Fibonacci scenario, validates its input, and displays it read-only. A TanStack mutation starts a job by sending only the scenario-version reference to FastAPI. The button is disabled while pending, automatic mutation retries are disabled, and a validated creation receipt displays the execution ID. Other routes show a not-found message. Execution URLs and polling remain to be added.
+React and TypeScript define the interface; Vite provides local development and static production builds. MUI supplies the theme, baseline styles, and components. `BrowserRouter` and `QueryClientProvider` are configured. `CatalogPage` uses a `showcases` query, displays cards and loading/empty/error states, and retries failed requests once. `/showcases/K01` loads the known immutable Fibonacci scenario, validates its input, and displays it read-only. A TanStack mutation starts a job by sending only the scenario-version reference to FastAPI. The button is disabled while pending, automatic mutation retries are disabled, and a validated creation receipt triggers navigation to `/executions/{id}`. Other routes show a not-found message. The detail route validates the UUID before requesting data, supports direct entry, and displays input, status, result, and duration. GET responses are validated against the Fibonacci implementation contract and requested identity. One-second interval polling stops on terminal states or request errors. A manual retry performs GET only; HTTP 404 is distinguished from general loading errors.
 
 `src/api/catalog.ts` and `src/api/scenarios.ts` use fetch with the query's AbortSignal and validates received JSON with Zod before returning typed data. HTTP and validation errors become query errors; the UI displays a readable message rather than raw backend or parser details.
 
@@ -96,7 +96,7 @@ Local Vite proxying already provides same-origin relative API requests. The plan
 | Python HTTP | FastAPI TestClient: response shape, status codes, Location, request validation, and lifecycle cleanup |
 | PostgreSQL | Testcontainers: migrations, JSONB persistence, rollback, API recreation, expired leases, row locks, concurrent reservations, guarded completion, and lease checks after row-lock waits, and actual worker subprocesses |
 | Spring | JUnit, MockMvc, Testcontainers: migrations, immutable scenarios, catalog/scenario responses and error cases |
-| Frontend | Vitest, React Testing Library, jsdom: accessible shell, catalog and scenario states, navigation and direct routes, response validation, execution creation and pending-button behavior, no automatic POST retries, HTTP/network failures, and abort propagation |
+| Frontend | Vitest, React Testing Library, jsdom: accessible shell, catalog and scenario states, navigation and direct routes, response validation, execution creation and pending-button behavior, no automatic POST retries, persistent execution routes, controlled-timer status polling and stopping, GET-only error recovery, HTTP/network failures, and abort propagation |
 | Static checks | Ruff and mypy; ktlint; ESLint and TypeScript; Prettier for the frontend |
 
 Python API integration tests use real temporary PostgreSQL with simulated Spring HTTP responses. Spring tests use their own PostgreSQL container. These checks do not constitute a deployed end-to-end test of both real backends and the browser. The final slice still needs that acceptance journey.
