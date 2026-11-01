@@ -22,7 +22,7 @@ Algorithm Lab connects independent algorithm implementations with an interactive
 
 | Component or capability | Current state |
 | --- | --- |
-| React application | Application shell, MUI theme, router and TanStack Query providers; no backend calls or execution views yet |
+| React application | Catalog fetched from Spring via Vite proxy and validated with Zod; loading/empty/error states; scenario and execution views pending |
 | Spring data service | Read-only catalog and immutable scenario-version APIs; Flyway migrations and health endpoints |
 | Python algorithm package | Iterative Fibonacci implementation with reference and property tests |
 | FastAPI algorithm service | Create and read executions; Spring scenario lookup, validation, persistence, and resource lifecycle |
@@ -37,7 +37,7 @@ The current API can persist a job as `queued`. Repository code can transition it
 
 ## Next Increments and Extension Points
 
-1. Connect React to catalog/scenario selection, execution creation, polling, and persistent execution URLs. Scenario discovery beyond the current known fixture ID still needs a UI/API decision.
+1. Extend the connected React catalog with scenario selection, execution creation, polling, and persistent execution URLs. Scenario discovery beyond the current known fixture ID still needs a UI/API decision.
 2. Add web-server routing, container packaging, deployment declarations, and migration sequencing.
 3. Verify the complete browser workflow.
 

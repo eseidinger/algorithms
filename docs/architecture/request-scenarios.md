@@ -2,7 +2,38 @@
 
 [Architecture overview](../architecture.md) · [HTTP contracts](http-api.md) · [Components](components-and-runtime.md)
 
-Status: November 1, 2026. These scenarios describe implemented backend behavior. The initiating actor is an API client: the React application is not yet connected. Catalog and execution stores in the diagrams are separate schemas in the same PostgreSQL instance.
+Status: November 1, 2026. These scenarios describe implemented backend behavior. R0 describes the connected React catalog. R1–R7 use a generic API client; React does not yet load individual scenarios or create/read executions. Catalog and execution stores in the diagrams are separate schemas in the same PostgreSQL instance.
+
+## R0. Load the Catalog in the Browser
+
+**Implemented.** Prerequisites: Vite, Spring, and PostgreSQL are running. The page opens with no cached catalog data. FastAPI and the worker are not needed for this read.
+
+```mermaid
+sequenceDiagram
+    actor B as Browser user
+    participant R as React and TanStack Query
+    participant V as Vite development proxy
+    participant S as Spring catalog API
+    participant D as PostgreSQL catalog
+    B->>R: Open the application
+    R->>R: Query showcases and show loading indicator
+    R->>V: GET /api/data/showcases with AbortSignal
+    V->>S: Forward full path to port 8080
+    S->>D: SELECT showcases ORDER BY id
+    D-->>S: Showcase rows
+    S-->>V: 200 JSON array
+    V-->>R: Response through frontend origin
+    R->>R: Validate JSON with Zod and cache result
+    alt Nonempty catalog
+        R-->>B: Show cards with names and descriptions
+    else Empty catalog
+        R-->>B: Show no-showcases message
+    end
+```
+
+HTTP, network, invalid JSON, and invalid data-shape failures enter the query error path. The query retries once and then displays a readable error message. The query's cancellation signal is passed to fetch. Catalog rendering does not trigger a scenario request or execution creation; those UI steps are still pending. Production routing needs the planned reverse proxy rather than relying on the Vite development server.
+
+**Evidence:** [Catalog API tests](../../apps/web/src/api/catalog.test.ts), [catalog component tests](../../apps/web/src/features/catalog/CatalogPage.test.tsx), and [application composition test](../../apps/web/src/App.test.tsx). They use mocked fetch and isolated QueryClient instances; they do not run the real Vite proxy or Spring. Spring's HTTP tests cover its backend contract separately.
 
 ## R1. Browse the Catalog and Load a Scenario
 

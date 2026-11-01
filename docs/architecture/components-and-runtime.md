@@ -8,24 +8,27 @@ Status: November 1, 2026. Implemented behavior and planned extensions are distin
 
 ```mermaid
 flowchart LR
-    Browser[Browser] --> Web[React shell / local Vite]
+    Browser[Browser] --> Web[React catalog / local Vite]
     Client[API client] --> API[FastAPI algorithm service]
     API -->|HTTP: resolve scenario version| Spring[Spring data service]
+    Web -->|Catalog GET through Vite proxy| Spring
     Spring --> Catalog[(PostgreSQL: catalog)]
     API --> Jobs[(PostgreSQL: executions)]
     Worker[Python worker process] -->|reserve and complete jobs| Jobs
     Worker --> Core[Independent algorithm package]
 ```
 
-The browser-to-backend connections are not drawn as implemented paths: the current React application does not issue API requests. Both database schemas reside in one local PostgreSQL instance. The worker is started separately through `algorithm-worker`; Compose does not automatically launch it or the APIs.
+React currently requests the Spring showcase catalog through Vite. Proxy routing to FastAPI is configured, but the frontend does not yet call its execution endpoints. Both database schemas reside in one local PostgreSQL instance. The worker is started separately through `algorithm-worker`; Compose does not automatically launch it or the APIs.
 
 ### React frontend
 
 Source: [apps/web](../../apps/web).
 
-React and TypeScript define the interface; Vite provides local development and static production builds. MUI supplies the theme, baseline styles, and components. `BrowserRouter` and `QueryClientProvider` are configured, while showcase routes, server queries, mutations, and polling remain to be added.
+React and TypeScript define the interface; Vite provides local development and static production builds. MUI supplies the theme, baseline styles, and components. `BrowserRouter` and `QueryClientProvider` are configured. `CatalogPage` uses a `showcases` query, displays cards and loading/empty/error states, and retries failed requests once. Showcase routes, scenario selection, mutations, and execution polling remain to be added.
 
-React Hook Form, Zod, `openapi-fetch`, and `openapi-typescript` are installed for future form validation and typed API access. Backend client generation is not wired into the build yet. The current Vite configuration has no API proxy.
+`src/api/catalog.ts` uses fetch with the query's AbortSignal and validates received JSON with Zod before returning typed showcase objects. HTTP and validation errors become query errors; the UI displays a readable message rather than raw backend or parser details.
+
+React Hook Form, `openapi-fetch`, and `openapi-typescript` remain installed for future forms and generated API access. Client generation is not wired into the build yet. Vite forwards `/api/data` to Spring on port 8080 and `/api/algorithms` to FastAPI on port 8000 without rewriting paths.
 
 ### Spring data service
 
@@ -82,7 +85,7 @@ The first slice targets four application components: a web server serving the Re
 
 Application Dockerfiles, reverse-proxy configuration, and a Developer Platform application declaration are not implemented. Authentication and deployment access-policy integration are also pending; the local APIs currently contain no application authentication layer.
 
-The frontend currently has neither proxy routing nor cross-origin backend calls. Same-origin routing through the planned web server will provide a shared browser entrypoint.
+Local Vite proxying already provides same-origin relative API requests. The planned production web server will provide the equivalent routing for the static frontend build.
 
 ## Verification Strategy
 
@@ -93,7 +96,7 @@ The frontend currently has neither proxy routing nor cross-origin backend calls.
 | Python HTTP | FastAPI TestClient: response shape, status codes, Location, request validation, and lifecycle cleanup |
 | PostgreSQL | Testcontainers: migrations, JSONB persistence, rollback, API recreation, expired leases, row locks, concurrent reservations, guarded completion, and lease checks after row-lock waits, and actual worker subprocesses |
 | Spring | JUnit, MockMvc, Testcontainers: migrations, immutable scenarios, catalog/scenario responses and error cases |
-| Frontend | Vitest, React Testing Library, jsdom: accessible application shell |
+| Frontend | Vitest, React Testing Library, jsdom: accessible shell, loading/catalog/empty/error states, response validation, HTTP/network failures, and abort propagation |
 | Static checks | Ruff and mypy; ktlint; ESLint and TypeScript; Prettier for the frontend |
 
 Python API integration tests use real temporary PostgreSQL with simulated Spring HTTP responses. Spring tests use their own PostgreSQL container. These checks do not constitute a deployed end-to-end test of both real backends and the browser. The final slice still needs that acceptance journey.

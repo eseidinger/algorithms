@@ -6,7 +6,7 @@ See the [architecture overview](architecture.md) for component responsibilities,
 
 The repository contains a React/TypeScript frontend, a Kotlin/Spring Boot data service, a Python service package, and an independent Python algorithm package. PostgreSQL runs in Docker; applications run directly on the host during development.
 
-The frontend currently renders the application shell. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. A separately started worker processes durable jobs continuously. The complete browser Fibonacci workflow is not implemented yet.
+The frontend renders the application shell and loads the showcase catalog from Spring, with loading, empty, and error states. Spring initializes the showcase catalog and immutable scenario versions and exposes read-only catalog APIs and Actuator health endpoints. Python has database configuration, Alembic migrations, a Spring HTTP client, an execution repository and service, and a FastAPI application for creating and reading executions. Its generated CLI still prints a greeting; start the API through Uvicorn as shown below. A separately started worker processes durable jobs continuously. The complete browser Fibonacci workflow is not implemented yet.
 
 ## Prerequisites
 
@@ -152,7 +152,15 @@ cd apps/web
 npm run dev
 ```
 
-Open the URL printed by Vite, normally `http://localhost:5173`. API proxying and backend calls are not configured yet.
+Open the URL printed by Vite, normally `http://localhost:5173`. The root page loads `/api/data/showcases` through TanStack Query and displays the returned names and descriptions as cards. Zod validates the JSON response. Loading, empty-catalog, and request/response-error states are handled; failed requests are retried once. This step requires PostgreSQL and Spring, but not FastAPI or the worker.
+
+The Vite development proxy forwards `/api/data` to `http://127.0.0.1:8080` and `/api/algorithms` to `http://127.0.0.1:8000`, preserving the complete path. Browser calls use relative URLs and the frontend origin, so a separate cross-origin setup is unnecessary for these proxied requests. Restart Vite after changing proxy configuration. If Vite selects another available port, use the printed port in the browser and any checks.
+
+```bash
+curl -i http://localhost:5173/api/data/showcases
+```
+
+A running Spring service should return the same catalog through this URL as through port 8080. Algorithm API proxying is configured for the next UI increment; scenario selection, execution creation, execution URLs, and status polling are not implemented in React yet. Production deployment still needs the planned web server/reverse proxy.
 
 ### Python execution API
 
@@ -220,7 +228,7 @@ npm --prefix apps/web run format:check
 npm --prefix apps/web test
 ```
 
-Vitest and React Testing Library run the application-shell test in jsdom. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
+Vitest and React Testing Library run application-shell and catalog-state tests in jsdom. API tests check runtime validation, HTTP/network/JSON failures, and AbortSignal forwarding. Tests stub fetch and create a fresh QueryClient per render to avoid shared cache state; retry delays are disabled in tests. They do not require running backends or verify an actual browser-to-Spring proxy connection. `npm --prefix apps/web run test:watch` starts watch mode. Prettier checks formatting; use `npm --prefix apps/web run format` to apply it.
 
 The build runs TypeScript checking followed by Vite and writes static assets to `apps/web/dist/`. To inspect that build locally:
 

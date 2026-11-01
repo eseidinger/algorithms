@@ -1,4 +1,5 @@
 import { AppBar, Container, Toolbar, Typography } from '@mui/material'
+import CatalogPage from './features/catalog/CatalogPage'
 
 export default function App() {
   return (
@@ -12,13 +13,7 @@ export default function App() {
       </AppBar>
 
       <Container component="main" maxWidth="lg" sx={{ py: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Algorithm Catalog
-        </Typography>
-
-        <Typography>
-          Explore algorithms, run experiments and compare results.
-        </Typography>
+        <CatalogPage />
       </Container>
     </>
   )
