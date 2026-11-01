@@ -72,3 +72,7 @@ besser auf andere Datenbanken und Speichertechnologien zurückgreifen sollte und
 ## Lokale Entwicklung
 
 Die englische Anleitung [Local Development, Builds, and Database Migrations](docs/development.md) beschreibt Einrichtung, Konfiguration, Prüfungen und Datenbankmigrationen.
+
+## Architektur
+
+Die englische [Architekturdokumentation](docs/architecture.md) beschreibt Komponenten, Datenverantwortung, API-Abläufe, Auftragsreservierungen und geplante Erweiterungen.

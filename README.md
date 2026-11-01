@@ -66,3 +66,7 @@ technologies, and what to keep in mind when using them.
 ## Local Development
 
 See [Local Development, Builds, and Database Migrations](docs/development.md) for setup, configuration, checks, and database lifecycle commands.
+
+## Architecture
+
+See [Architecture](docs/architecture.md) for component boundaries, data ownership, API flows, execution leases, and planned extensions.
